@@ -10,7 +10,7 @@ CTL="$MODDIR/bin/float-ctl.sh"
 
 # ---------- 优先走图形界面 ----------
 if pm list packages 2>/dev/null | grep -q "io.github.a13e300.ksuwebui"; then
-  echo "正在打开图形界面…"
+  echo "正在用 KsuWebUI 打开图形界面…"
   am start -n io.github.a13e300.ksuwebui/.WebUIActivity -e id float_charge > /dev/null 2>&1
   sleep 1
   echo ""
@@ -72,4 +72,4 @@ else
   echo "  电流上限已还原为正常值"
 fi
 echo ""
-echo "（安装 KsuWebUI 后可点「操作」直接打开图形界面）"
+echo "（图形界面需自备第三方 App「KsuWebUI」；本模块不自带也不安装它）"

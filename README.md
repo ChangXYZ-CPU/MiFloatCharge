@@ -9,7 +9,8 @@ Magisk 模块：把充电电流钳到 ≈ 系统功耗，**让电池不充不放
 - 实测机型：**小米平板 5 Pro**（`elish` 平台 / HyperOS / Magisk 30.6）
 - 系统：实测 Android 13 + Magisk 30.6
 - Root：**Magisk**（KernelSU / APatch 也能用，脚本不依赖特定 root 实现）
-- 模块只有 shell 脚本 + WebUI，**不安装任何 App**
+- 模块只有 shell 脚本 + 一个静态网页，**不安装任何 App**
+- 图形界面需要**自备 KsuWebUI**（第三方 App，不在本项目内，详见下方"使用"）
 
 > 本人做这个模块是自用，可能因学业原因维护不及时，欢迎提 Issue，但不保证响应时效。
 
@@ -25,6 +26,7 @@ Magisk 模块：把充电电流钳到 ≈ 系统功耗，**让电池不充不放
 - 电量 90~94% 区间（因为测试时电量正好在这里）
 - 单个 CM 档位的长时间稳定性（CM=60mA，连续观察 5~6 分钟）
 - 插拔充电器、`start` / `stop` / `toggle` 的往返
+- WebUI 只在**已装 KsuWebUI 的同型号设备**上验证过；纯命令行路径测得更充分
 
 **未测试（完全没数据）**
 
@@ -117,7 +119,7 @@ module/                    模块本体（可直接打包成 zip 刷入）
   module.prop              模块信息
   config.conf              参数配置（运行时会被 daemon 周期重读）
   service.sh               开机自启（ENABLED=0 时直接退出，不占资源）
-  action.sh                Magisk「操作」按钮：有 KsuWebUI 就直接打开图形界面
+  action.sh                Magisk「操作」按钮：装了 KsuWebUI 就打开图形界面，否则退回命令行切换
   uninstall.sh             卸载时还原电流上限，避免留下"一直限流"
   bin/float-daemon.sh      守护主循环：采样 → 求平均 → 增量调整 → 写节点
   bin/float-ctl.sh         控制接口：start / stop / toggle / status
@@ -141,18 +143,38 @@ build.sh                   打包：读 module/module.prop 版本号，生成 Mi
 
 ## 使用
 
-### 图形界面（推荐）
+### 图形界面（推荐，但需要额外装一个 App）
 
-装了 **KsuWebUI**（`io.github.a13e300.ksuwebui`）的话，
-点模块卡片的「操作」按钮会**直接打开图形界面**：
+**先说清楚：本模块不自带 WebUI 容器，也不安装任何 App。**
+
+模块里只有一个 `webroot/index.html` 静态页面，它需要一个"容器"App 来加载。
+这个容器就是 **KsuWebUI**（包名 `io.github.a13e300.ksuwebui`）——一个**第三方独立 App**，
+不是本项目的组成部分，也不随本模块安装。
+
+> 它是 KernelSU 生态的工具，但通过 `su` 执行命令，**Magisk 一样能用**。
+> 很多"横屏适配""模块管理"类模块会顺手把它装上，所以你可能已经有了；
+> 但如果你的设备上没有，**图形界面就打不开**。
+
+**怎么确认有没有**：设置里找 "KsuWebUI" 这个 App，或者执行
+
+```sh
+pm list packages | grep io.github.a13e300.ksuwebui
+```
+
+有输出就是装了。
+
+**装了之后**：点模块卡片的「操作」按钮会直接打开图形界面：
 
 - 大圆按钮一键开关
 - 实时显示电量 / 电池净电流 / 电流上限 / 充电器状态
 - 参数可视化调整，改完点保存
 - 底部运行日志（首屏不显示，往上滑查看）
 
-> KsuWebUI 虽然是 KernelSU 生态的工具，但它通过 `su` 执行命令，
-> **Magisk 一样能用**。
+**没装也不要紧**：`action.sh` 会自动退化成命令行切换（点一下开 / 再点一下关），
+所有功能都能用，只是没有图形界面。
+
+> 本项目不包含 KsuWebUI 的 APK，也不对它做任何分发或背书。
+> 需要的请自行搜索该包名获取（它的源码在 GitHub 上），安装后记得给它 root 权限。
 
 ### 命令行
 
