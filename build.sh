@@ -58,9 +58,13 @@ with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         # 脚本保持可执行
         mode = 0o755 if rel.endswith('.sh') else 0o644
         zi.external_attr = (0o100000 | mode) << 16
-        with open(full, 'rb') as fh:
-            z.writestr(zi, fh.read(), compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
-    z.writestr('README.txt', README, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+        data = open(full, 'rb').read()
+        # 文本文件强制 LF：Magisk 读 module.prop 遇到 CRLF 会把版本号解析成 "v1.0.5\r"
+        if not rel.endswith(('.zip', '.png', '.jpg', '.jpeg', '.webp')):
+            data = data.replace(b'\r\n', b'\n')
+        z.writestr(zi, data, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
+    z.writestr('README.txt', README.replace('\r\n', '\n'),
+               compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
 
 h = hashlib.md5(open(out, 'rb').read()).hexdigest()
 print("打包完成: %s" % out)
