@@ -1,0 +1,6 @@
+id=float_charge
+name=悬浮供电 (平板)
+version=v1.0.4
+versionCode=4
+author=ChangXYZ
+description=把充电电流钳到≈系统功耗，让电池不充不放（伪旁路）。增量反馈，低频采样，可开关。

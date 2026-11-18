@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>悬浮供电</title>
+<style>
+:root{
+  --bg:#0f1115; --card:#181c23; --card2:#1f242d; --line:#2a303b;
+  --txt:#e8eaed; --txt2:#9aa3af; --txt3:#6b7280;
+  --blue:#3b82f6; --green:#22c55e; --red:#ef4444; --amber:#f59e0b;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{padding:14px 14px 24px;background:var(--bg);color:var(--txt);
+  font-family:-apple-system,"Noto Sans CJK SC","PingFang SC",system-ui,sans-serif;
+  font-size:15px;line-height:1.5;overscroll-behavior-y:contain}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:18px;font-weight:600;margin:0 0 2px;letter-spacing:.2px}
+.sub{font-size:12px;color:var(--txt3);margin-bottom:12px}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:13px;
+  padding:13px 14px;margin-bottom:11px}
+
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:11px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:11px 13px}
+.stat .k{font-size:11.5px;color:var(--txt3);margin-bottom:3px}
+.stat .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.25}
+.stat .v small{font-size:11.5px;font-weight:400;color:var(--txt2);margin-left:2px}
+.v.green{color:var(--green)} .v.blue{color:var(--blue)} .v.amber{color:var(--amber)} .v.gray{color:var(--txt2)}
+
+.mainrow{display:flex;gap:12px;align-items:stretch}
+.togglebox{flex:0 0 268px;display:flex;flex-direction:column;justify-content:center;
+  align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);
+  border-radius:13px;padding:18px}
+.bigbtn{width:168px;height:168px;border-radius:50%;border:none;cursor:pointer;
+  font-size:18px;font-weight:600;color:#fff;background:var(--card2);
+  border:2px solid var(--line);transition:all .18s;display:flex;align-items:center;justify-content:center}
+.bigbtn:active{transform:scale(.95)}
+.bigbtn.on{background:var(--blue);border-color:var(--blue);box-shadow:0 0 0 8px rgba(59,130,246,.13)}
+.bigbtn.off{background:var(--card2);border-color:var(--line);color:var(--txt2)}
+.hint{font-size:12.5px;color:var(--txt3);text-align:center}
+.hint2{font-size:11.5px;color:var(--txt3);text-align:center;line-height:1.7;
+  font-variant-numeric:tabular-nums}
+
+.params{flex:1;background:var(--card);border:1px solid var(--line);border-radius:13px;
+  padding:14px 16px 12px;display:flex;flex-direction:column;min-height:0}
+.pgrid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:0 26px;min-height:0}
+.prow{display:flex;align-items:center;gap:12px;padding:6px 0;
+  border-bottom:1px solid rgba(48,56,70,.85)}
+.pgrid .prow:nth-last-child(-n+2){border-bottom:none}
+.plabel{flex:1 1 auto;min-width:0}
+.plabel b{display:block;font-size:14.5px;font-weight:500;line-height:1.4}
+.plabel span{font-size:11.8px;color:var(--txt3);line-height:1.35}
+.pctrl{display:flex;align-items:center;gap:7px;flex:0 0 auto}
+input[type=number]{width:96px;background:var(--card2);border:1px solid var(--line);
+  border-radius:8px;color:var(--txt);padding:9px 11px;font-size:15.5px;
+  font-variant-numeric:tabular-nums;outline:none;text-align:center}
+input[type=number]:focus{border-color:var(--blue)}
+.unit{font-size:12.5px;color:var(--txt3);min-width:16px}
+.rangetip{font-size:11px;color:var(--txt3)}
+
+.savebar{display:flex;gap:9px;align-items:center;margin-top:auto;
+  padding-top:11px;border-top:1px solid rgba(42,48,59,.42)}
+.btn{background:var(--blue);color:#fff;border:none;border-radius:9px;padding:10px 20px;
+  font-size:14px;font-weight:500;cursor:pointer;transition:opacity .15s}
+.btn:active{opacity:.75}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--txt2)}
+.msg{font-size:12.5px;color:var(--green)}
+.msg.err{color:var(--red)}
+
+/* 日志：不再用内部滚动，跟随页面滚动 */
+.logbox{background:#0a0c10;border:1px solid var(--line);border-radius:11px;
+  padding:14px 14px 12px;font-family:ui-monospace,Menlo,Consolas,monospace;
+  font-size:12px;color:#8b95a5;white-space:pre-wrap;line-height:1.7;word-break:break-all}
+.logbox .t{color:#4b5563}
+.logbox .adj{color:var(--amber)}
+.logbox .init{color:var(--blue)}
+.logbox .stop{color:var(--red)}
+
+.head{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
+.head h2{font-size:13.5px;font-weight:500;margin:0;color:var(--txt2)}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px}
+.dot.on{background:var(--green);box-shadow:0 0 6px var(--green)}
+.dot.off{background:#4b5563}
+
+.banner{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.32);color:#fca5a5;
+  border-radius:9px;padding:10px 13px;font-size:12.5px;margin-bottom:11px;display:none}
+
+@media(max-width:860px){
+  .grid4{grid-template-columns:repeat(2,1fr)}
+  .mainrow{flex-direction:column}
+  .togglebox{flex:none;flex-direction:row;gap:14px}
+  .bigbtn{width:80px;height:80px;font-size:14px}
+  .pgrid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>悬浮供电</h1>
+  <div class="sub">把充电电流钳到 ≈ 系统功耗，让电池不充不放</div>
+
+  <div class="banner" id="banner"></div>
+
+  <div class="grid4">
+    <div class="stat"><div class="k">电量</div><div class="v blue" id="s-cap">—<small>%</small></div></div>
+    <div class="stat"><div class="k">电池净电流</div><div class="v" id="s-cur">—<small>mA</small></div></div>
+    <div class="stat"><div class="k">电流上限 CM</div><div class="v gray" id="s-cm">—<small>mA</small></div></div>
+    <div class="stat"><div class="k">充电器</div><div class="v gray" id="s-usb">—</div></div>
+  </div>
+
+  <div class="mainrow">
+    <div class="togglebox">
+      <button class="bigbtn off" id="btn">开启</button>
+      <div class="hint" id="btnHint">当前未运行</div>
+      <div class="hint2" id="toggleMeta"></div>
+    </div>
+
+    <div class="params">
+      <div class="head"><h2>参数设置</h2><span style="font-size:11.5px;color:var(--txt3)">改完点保存，下个周期生效</span></div>
+
+      <div class="pgrid">
+      <div class="prow">
+        <div class="plabel"><b>采样窗口</b><span>多久写一次电流</span></div>
+        <div class="pctrl">
+          <input type="number" id="p-window" min="10" max="3600" step="5">
+          <span class="unit">秒</span>
+          <span class="rangetip" id="tip-window"></span>
+        </div>
+      </div>
+
+      <div class="prow">
+        <div class="plabel"><b>每周期采样次数</b><span>次数越多越平滑</span></div>
+        <div class="pctrl">
+          <input type="number" id="p-count" min="1" max="30" step="1">
+          <span class="unit">次</span>
+        </div>
+      </div>
+
+      <div class="prow">
+        <div class="plabel"><b>死区</b><span>净电流在此范围内不调整</span></div>
+        <div class="pctrl">
+          <input type="number" id="p-deadband" min="5" max="500" step="5">
+          <span class="unit">mA</span>
+        </div>
+      </div>
+
+      <div class="prow">
+        <div class="plabel"><b>调整步长</b><span>每次调整多少</span></div>
+        <div class="pctrl">
+          <input type="number" id="p-step" min="5" max="500" step="5">
+          <span class="unit">mA</span>
+        </div>
+      </div>
+
+      <div class="prow">
+        <div class="plabel"><b>电流下限</b><span>低于约 40 会滑入断充</span></div>
+        <div class="pctrl">
+          <input type="number" id="p-min" min="20" max="2000" step="10">
+          <span class="unit">mA</span>
+        </div>
+      </div>
+
+      <div class="prow">
+        <div class="plabel"><b>电流上限</b><span>防止反馈推高充过头</span></div>
+        <div class="pctrl">
+          <input type="number" id="p-max" min="50" max="20000" step="50">
+          <span class="unit">mA</span>
+        </div>
+      </div>
+
+      <div class="prow">
+        <div class="plabel"><b>电量上限</b><span>到顶后保持悬浮不推高</span></div>
+        <div class="pctrl">
+          <input type="number" id="p-battmax" min="50" max="100" step="1">
+          <span class="unit">%</span>
+        </div>
+      </div>
+
+      <div class="prow">
+        <div class="plabel"><b>电量下限</b><span>低于此值暂停，优先充满</span></div>
+        <div class="pctrl">
+          <input type="number" id="p-battmin" min="5" max="60" step="1">
+          <span class="unit">%</span>
+        </div>
+      </div>
+      </div>
+
+      <div class="savebar">
+        <button class="btn" id="save">保存设置</button>
+        <button class="btn ghost" id="reload">重新读取</button>
+        <span class="msg" id="msg"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="logCard">
+    <div class="head"><h2>运行日志</h2><span style="font-size:11.5px;color:var(--txt3)" id="logInfo"></span></div>
+    <div class="logbox" id="log">加载中…</div>
+  </div>
+</div>
+
+<script>
+const MOD='/data/adb/modules/float_charge';
+const CTL=MOD+'/bin/float-ctl.sh';
+const CFG=MOD+'/config.conf';
+let running=false;
+let baseLogMargin=null;
+
+function hasKsu(){ return typeof ksu!=='undefined' && ksu && typeof ksu.exec==='function'; }
+
+function run(cmd){
+  return new Promise(resolve=>{
+    if(!hasKsu()){ resolve({errno:-1,stdout:'',stderr:'no ksu bridge'}); return; }
+    const cb='__cb'+Date.now()+Math.floor(Math.random()*1e5);
+    let done=false;
+    window[cb]=function(errno,stdout,stderr){
+      if(done) return; done=true;
+      delete window[cb];
+      resolve({errno:errno,stdout:stdout||'',stderr:stderr||''});
+    };
+    try{
+      ksu.exec(cmd,cb);
+      setTimeout(()=>{ if(!done){done=true;delete window[cb];resolve({errno:-2,stdout:'',stderr:'timeout'});} },15000);
+    }catch(e){
+      delete window[cb];
+      resolve({errno:-3,stdout:'',stderr:String(e)});
+    }
+  });
+}
+
+const $=id=>document.getElementById(id);
+const mA=u=>Math.round((parseInt(u||0,10))/1000);
+
+function showBanner(t){
+  const b=$('banner');
+  if(!t){ b.style.display='none'; return; }
+  b.textContent=t; b.style.display='block';
+}
+
+/* 主区域撑满首屏剩余高度，参数行随之均匀分布 */
+function fitToScreen(){
+  const main=document.querySelector('.mainrow');
+  if(!main) return;
+  main.style.height='';
+  const vh=window.innerHeight||document.documentElement.clientHeight;
+  const top=main.getBoundingClientRect().top;
+  const h=vh-top-20;
+  if(h>=430){
+    main.style.height=h+'px';
+  }
+}
+
+/* 把日志卡片推到首屏之外，保证打开时看不到日志内容 */
+function pushLogBelowFold(){
+  const card=$('logCard');
+  if(!card) return;
+  if(baseLogMargin===null){
+    baseLogMargin=parseFloat(getComputedStyle(card).marginTop)||0;
+  }
+  card.style.marginTop=baseLogMargin+'px';
+  const vh=window.innerHeight||document.documentElement.clientHeight;
+  const top=card.getBoundingClientRect().top;
+  if(top<vh){
+    card.style.marginTop=(baseLogMargin+(vh-top)+6)+'px';
+  }
+}
+
+async function refresh(){
+  const r=await run(
+    'B=/sys/class/power_supply/battery; U=/sys/class/power_supply/usb; '+
+    'echo "CAP=$(cat $B/capacity 2>/dev/null)"; '+
+    'echo "CUR=$(cat $B/current_now 2>/dev/null)"; '+
+    'echo "CM=$(cat $B/constant_charge_current_max 2>/dev/null)"; '+
+    'echo "ONLINE=$(cat $U/online 2>/dev/null)"; '+
+    'echo "DAEMON=$(cat /data/adb/float_charge/daemon.pid 2>/dev/null)"; '+
+    'echo "ENABLED=$(grep "^ENABLED=" '+CFG+' 2>/dev/null | cut -d= -f2)"'
+  );
+  const d={};
+  (r.stdout||'').split('\n').forEach(l=>{
+    const i=l.indexOf('='); if(i>0) d[l.slice(0,i)]=l.slice(i+1).trim();
+  });
+
+  const cap=parseInt(d.CAP||0,10);
+  const cur=parseInt(d.CUR||0,10);
+  const cm=parseInt(d.CM||0,10);
+  $('s-cap').innerHTML=(cap||'—')+'<small>%</small>';
+  $('s-cur').innerHTML=(isNaN(cur)?'—':(cur>0?'+':'')+mA(cur))+'<small>mA</small>';
+  $('s-cm').innerHTML=(isNaN(cm)?'—':mA(cm))+'<small>mA</small>';
+  $('s-usb').textContent=(d.ONLINE==='1')?'已连接':'未连接';
+  $('s-usb').className='v '+((d.ONLINE==='1')?'green':'gray');
+
+  const curEl=$('s-cur');
+  curEl.className='v '+(Math.abs(cur)<80000?'green':(cur<0?'blue':'amber'));
+
+  const pid=d.DAEMON;
+  let alive=false;
+  if(pid){
+    const c=await run('[ -d /proc/'+pid+' ] && echo yes || echo no');
+    alive=(c.stdout||'').trim()==='yes';
+  }
+  running=alive;
+  const btn=$('btn');
+  if(alive){
+    btn.textContent='关闭'; btn.className='bigbtn on';
+    $('btnHint').innerHTML='<span class="dot on"></span>悬浮运行中';
+  }else{
+    btn.textContent='开启'; btn.className='bigbtn off';
+    $('btnHint').innerHTML='<span class="dot off"></span>当前未运行';
+  }
+
+  const w=parseInt(($('p-window')||{}).value||60,10);
+  const n=parseInt(($('p-count')||{}).value||5,10);
+  const meta=$('toggleMeta');
+  if(meta){
+    meta.innerHTML='采样 '+w+'s × '+n+' 次<br>CM '+mA(cm)+' mA';
+  }
+
+  if(!hasKsu()) showBanner('无法连接 root（ksu 桥不可用）。请用 KsuWebUI 打开本模块页面。');
+  else showBanner('');
+}
+
+async function loadCfg(){
+  const r=await run('cat '+CFG+' 2>/dev/null');
+  const m={};
+  (r.stdout||'').split('\n').forEach(l=>{
+    const i=l.indexOf('='); if(i>0 && !l.trim().startsWith('#')) m[l.slice(0,i).trim()]=l.slice(i+1).trim();
+  });
+  $('p-window').value=m.SAMPLE_WINDOW||60;
+  $('p-count').value=m.SAMPLE_COUNT||5;
+  $('p-deadband').value=m.DEADBAND_MA||50;
+  $('p-step').value=m.STEP_MA||30;
+  $('p-min').value=m.MIN_CM_MA||50;
+  $('p-max').value=m.MAX_CM_MA||500;
+  $('p-battmax').value=m.BATT_MAX||95;
+  $('p-battmin').value=m.BATT_MIN||20;
+  updateWindowTip();
+}
+
+function updateWindowTip(){
+  const w=parseInt($('p-window').value||60,10);
+  const c=parseInt($('p-count').value||5,10)||1;
+  const per=Math.max(1,Math.floor(w/c));
+  $('tip-window').textContent='×'+c+'='+per+'s';
+}
+
+async function saveCfg(){
+  const kv={
+    SAMPLE_WINDOW:$('p-window').value,
+    SAMPLE_COUNT:$('p-count').value,
+    DEADBAND_MA:$('p-deadband').value,
+    STEP_MA:$('p-step').value,
+    MIN_CM_MA:$('p-min').value,
+    MAX_CM_MA:$('p-max').value,
+    BATT_MAX:$('p-battmax').value,
+    BATT_MIN:$('p-battmin').value
+  };
+  let cmd='F='+CFG+'; ';
+  for(const k in kv){
+    cmd+='sed -i "s|^'+k+'=.*|'+k+'='+kv[k]+'|" $F; ';
+  }
+  const r=await run(cmd+'echo done');
+  const ok=(r.stdout||'').trim()==='done';
+  $('msg').textContent=ok?'已保存':'保存失败';
+  $('msg').className='msg'+(ok?'':' err');
+  setTimeout(()=>{$('msg').textContent='';},2600);
+  loadCfg();
+}
+
+async function toggle(){
+  const btn=$('btn');
+  btn.disabled=true;
+  if(running){
+    await run('sh '+CTL+' stop');
+    if(hasKsu() && ksu.toast) ksu.toast('悬浮供电已关闭');
+  }else{
+    await run('sh '+CTL+' start');
+    if(hasKsu() && ksu.toast) ksu.toast('悬浮供电已开启');
+  }
+  await new Promise(r=>setTimeout(r,900));
+  await refresh();
+  btn.disabled=false;
+}
+
+async function loadLog(){
+  const r=await run('tail -n 60 /data/adb/float_charge/float.log 2>/dev/null');
+  const box=$('log');
+  const lines=(r.stdout||'').split('\n').filter(x=>x.trim());
+  if(!lines.length){ box.textContent='（暂无日志）'; $('logInfo').textContent=''; return; }
+  box.innerHTML=lines.map(l=>{
+    let cls='';
+    if(l.includes('adj=-1')||l.includes('adj=1')) cls='adj';
+    else if(l.includes('初始化')||l.includes('daemon start')) cls='init';
+    else if(l.includes('停止')||l.includes('stopped')) cls='stop';
+    else if(l.includes('WARN')||l.includes('ERR')) cls='stop';
+    const sp=l.indexOf(' ');
+    if(sp>0) return '<span class="t">'+l.slice(0,sp)+'</span>'+l.slice(sp);
+    return l;
+  }).join('\n');
+  $('logInfo').textContent=lines.length+' 条';
+}
+
+$('btn').onclick=toggle;
+$('save').onclick=saveCfg;
+$('reload').onclick=()=>{loadCfg();refresh();loadLog();};
+$('p-window').oninput=updateWindowTip;
+$('p-count').oninput=updateWindowTip;
+window.addEventListener('resize',()=>{baseLogMargin=null;fitToScreen();pushLogBelowFold();});
+
+(async function init(){
+  await refresh();
+  await loadCfg();
+  await loadLog();
+  fitToScreen();
+  pushLogBelowFold();
+  setTimeout(()=>{fitToScreen();pushLogBelowFold();},150);
+  setInterval(refresh,3000);
+  setInterval(loadLog,6000);
+})();
+</script>
+</body>
+</html>

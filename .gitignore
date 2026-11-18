@@ -1,0 +1,7 @@
+*.zip
+*.png
+*.jpg
+!docs/screenshots/
+!docs/screenshots/*.jpg
+.DS_Store
+Thumbs.db
