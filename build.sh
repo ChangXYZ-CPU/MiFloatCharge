@@ -47,7 +47,8 @@ for dirpath, dirnames, filenames in os.walk(root):
         if name in SKIP or name.endswith(SKIP_EXT):
             continue
         full = os.path.join(dirpath, name)
-        rel = os.path.relpath(full, root)
+        # zip 内必须是正斜杠，Windows 的 os.sep 是反斜杠，会让 Magisk 当成文件名
+        rel = os.path.relpath(full, root).replace(os.sep, '/')
         files.append((full, rel))
 files.sort(key=lambda x: x[1])
 
