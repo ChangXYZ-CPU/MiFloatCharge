@@ -8,7 +8,8 @@ Magisk 模块：把充电电流钳到 ≈ 系统功耗，**让电池不充不放
 
 - 实测机型：**小米平板 5 Pro**（`elish` 平台 / HyperOS / Magisk 30.6）
 - 系统：实测 Android 13 + Magisk 30.6
-- Root：**Magisk**（KernelSU / APatch 也能用，脚本不依赖特定 root 实现）
+- Root：**仅 Magisk**（在 Magisk 30.6 上实测）。KernelSU / APatch **未适配**——
+  本模块没有它们的安装脚本，也没测试过，**装不上或装上用不了**，请勿尝试
 - 模块只有 shell 脚本 + 一个静态网页，**不安装任何 App**
 - 图形界面需要**自备 KsuWebUI**（第三方 App，不在本项目内，详见下方"使用"）
 
@@ -35,7 +36,8 @@ Magisk 模块：把充电电流钳到 ≈ 系统功耗，**让电池不充不放
 - ❌ 无线充电
 - ❌ 长时间运行（数小时 / 数天 / 边玩边充 / 关机充电）
 - ❌ **其他机型**——只在 elish 验证过，"理论上可用"不等于"能用"
-- ❌ 其他系统版本（Android 12 / 14 / 15）、KernelSU / APatch 环境
+- ❌ 其他系统版本（Android 12 / 14 / 15）
+- ❌ KernelSU / APatch（**本模块未适配**，只有 Magisk 安装脚本）
 - ❌ 与其他充电控制类模块/App 共存（Scene、Acc、Battery Charge Limit 等）
 - ❌ 对电池寿命的长期影响——**完全没有数据**，不要相信任何"护电池"的说法
 
@@ -151,7 +153,8 @@ build.sh                   打包：读 module/module.prop 版本号，生成 Mi
 这个容器就是 **KsuWebUI**（包名 `io.github.a13e300.ksuwebui`）——一个**第三方独立 App**，
 不是本项目的组成部分，也不随本模块安装。
 
-> 它是 KernelSU 生态的工具，但通过 `su` 执行命令，**Magisk 一样能用**。
+> 它是 KernelSU 生态的工具，但只是通过 `su` 执行命令，所以 **Magisk 上也能跑**——
+> 这只关系到那个 App 本身，和本模块支持的 root 方案无关。
 > 很多"横屏适配""模块管理"类模块会顺手把它装上，所以你可能已经有了；
 > 但如果你的设备上没有，**图形界面就打不开**。
 
@@ -227,7 +230,7 @@ SAMPLE_COUNT=5     # 每个周期采样次数
 | 电池电流 | 精确 0（驱动级旁路） | +13~17mA（噪声级） |
 | 依赖 | 需要驱动暴露 `smart_chg` | 任意有电流上限节点的机器 |
 | 稳定性 | 驱动保持，拔插不丢 | 依靠模块周期维持 |
-| Root | 仅 KernelSU | Magisk / KSU / APatch |
+| Root | 仅 KernelSU | 仅 Magisk |
 
 K70 有官方旁路位所以能用真旁路；平板没有（`persist.vendor.smartchg` 为空、
 `smart_chg` 节点不存在），只能退而求其次做"伪旁路"。

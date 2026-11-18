@@ -33,7 +33,8 @@
 - 非 PD 充电器（5V2A、车载、电脑 USB）、无线充电
 - 长时间运行：数小时、数天、边玩边充、关机充电
 - **其他机型**：只在 elish 上验证过，"理论上能用"不代表能用
-- 其他系统版本（Android 12/14/15）、KernelSU / APatch
+- 其他系统版本（Android 12/14/15）
+- KernelSU / APatch：**本模块未适配**，只提供 Magisk 安装脚本，请不要在它们上面安装
 - 与 Scene / Acc / Battery Charge Limit 等工具共存
 - **对电池寿命的长期影响：零数据**
 
