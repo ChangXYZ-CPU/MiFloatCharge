@@ -10,24 +10,6 @@
 
 MODDIR=${MODDIR:-$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)}
 DATA_DIR=/data/adb/MiFloatCharge
-# 旧版数据目录迁移：模块 ID 由 float_charge 改为 MiFloatCharge
-_OLD_DATA=/data/adb/float_charge
-_OLD_MOD=/data/adb/modules/float_charge
-if [ -d "$_OLD_DATA" ] || [ -d "$_OLD_MOD" ]; then
-  mkdir -p "$DATA_DIR" 2>/dev/null
-  # 运行时数据（预设/原始CM/断电标记）
-  for _f in presets.conf orig_cm top_cut; do
-    [ -f "$_OLD_DATA/$_f" ] && [ ! -f "$DATA_DIR/$_f" ] && cp "$_OLD_DATA/$_f" "$DATA_DIR/$_f" 2>/dev/null
-  done
-  # 配置在旧模块目录里。注意 zip 自带默认 config.conf，此时新模块目录里
-  # 已经有文件了，不能只判断"文件不存在"；用一次性标记，避免覆盖用户
-  # 装完新版后又改过的设置
-  _OLD_CFG="$_OLD_MOD/config.conf"
-  if [ -f "$_OLD_CFG" ] && [ ! -f "$DATA_DIR/.migrated" ]; then
-    cp "$_OLD_CFG" "$MODDIR/config.conf" 2>/dev/null
-    touch "$DATA_DIR/.migrated" 2>/dev/null
-  fi
-fi
 CFG=$MODDIR/config.conf
 LOG=$DATA_DIR/float.log
 PIDF=$DATA_DIR/daemon.pid
