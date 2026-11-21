@@ -6,7 +6,7 @@ Magisk 模块：把充电电流钳到 ≈ 系统功耗，**让电池不充不放
 和"真旁路"不同，它不需要驱动提供旁路位，只靠一个可写的电流上限节点，
 **任何暴露 `constant_charge_current_max` 的小米设备理论上都能用**。
 
-- 实测机型：**小米平板 5 Pro 12.4**（`M2105K81AC` / `elish` / SM8250 / HyperOS 2 / Magisk 30.6）
+- 实测机型：**小米平板 5 Pro**（`M2105K81AC` / `elish` / SM8250 / HyperOS 2 / Magisk 30.6）
 - 系统：实测 Android 13 + Magisk 30.6
 - Root：**仅 Magisk**（在 Magisk 30.6 上实测）。KernelSU / APatch **未适配**——
   本模块没有它们的安装脚本，也没测试过，**装不上或装上用不了**，请勿尝试
@@ -83,7 +83,7 @@ Magisk 模块：把充电电流钳到 ≈ 系统功耗，**让电池不充不放
 
 ## 实测：CM 控制曲线
 
-在小米平板 5 Pro 12.4 上逐档写入 `constant_charge_current_max`，等稳定后取
+在小米平板 5 Pro 上逐档写入 `constant_charge_current_max`，等稳定后取
 `current_now` 平均值（负 = 充电 / 正 = 放电）：
 
 | 写入 CM | 净电流 | 行为 |
