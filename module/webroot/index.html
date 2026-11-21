@@ -79,7 +79,8 @@ input[type=number]:focus{border-color:var(--blue)}
 .msg{margin-left:auto}
 .tag{background:rgba(58,110,200,.16);color:#7fb0ff;border:1px solid rgba(80,140,255,.3);
   border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;
-  user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;transition:background .15s}
+  user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;
+  touch-action:manipulation;transition:background .15s}
 .tag:active{background:rgba(58,110,200,.38)}
 /* 界面文字默认不可选中：长按预设标签不会弹出系统文字选择菜单，手感更像原生控件 */
 body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
@@ -456,11 +457,17 @@ async function loadPresets(){
     const m=line.match(/^(\d+)=(.+)$/); if(!m) return;
     const n=m[1], nm=m[2].split(',')[0];
     const b=document.createElement('button');
-    b.type='button'; b.className='tag'; b.textContent=nm;
+    b.type='button'; b.className='tag'; b.textContent=nm; b.tabIndex=-1;
     let timer=null, long=false;
     b.addEventListener('pointerdown',e=>{
-      e.preventDefault(); long=false;
-      timer=setTimeout(()=>{ long=true; presetAction(n,true); },600);
+      e.preventDefault();
+      // 立刻收键盘：如果焦点还在某个输入框上，长按期间键盘会一直挂着，
+      // 看起来像"长按标签弹出键盘"
+      if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();
+      long=false;
+      // 450ms 而不是 600：抢在 WebView 的系统长按（约 500ms）之前触发，
+      // 避免系统开始文本选择 / callout 手势
+      timer=setTimeout(()=>{ long=true; presetAction(n,true); },450);
     });
     const cancel=()=>{ if(timer) clearTimeout(timer); };
     b.addEventListener('pointerup',()=>{ cancel(); if(!long) presetAction(n,false); });
