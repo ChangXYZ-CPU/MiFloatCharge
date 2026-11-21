@@ -88,7 +88,8 @@ Magisk 模块：把充电电流钳到 ≈ 系统功耗，**让电池不充不放
    （这正是"下限设 0、睡一晚掉一格电"的原因）
 3. **≥100 才线性**：净电流 ≈ −(CM − 27)，斜率约 −1
 
-所以 `CM下限` 不要低于 50。允许设更低，但那等于"停止充电"，会掉电。
+所以 `CM下限` 填 **50** 是稳妥默认；允许填更低（包括 **0**），
+模块不会拦你。但低于约 40 等于让驱动关闭充电、电池掉电，这是硬件行为，不是模块强制限制。
 
 ### 补充：CM=0 的行为是有条件的
 
@@ -131,7 +132,9 @@ Magisk 模块：把充电电流钳到 ≈ 系统功耗，**让电池不充不放
 | 40 mA 以下 | +310 mA | 滑入断充（驱动放弃充电） |
 
 **注意死区**：CM 低于约 40mA 时，驱动会判定"这点电流不值得充"而直接放弃，
-电池反而开始放电（+310mA）。所以模块有 `MIN_CM_MA` 下限，默认 50mA。
+电池反而开始放电（+310mA）。模块提供 `MIN_CM_MA` 参数来钳住算法的输出下限，
+**默认 50mA，但可以改成 0**；改成 0 时模块允许把 CM 一路写到 0，
+低电流下的断充/掉电是驱动行为，不是模块额外加的限制。
 
 ### 稳定性
 
@@ -235,13 +238,13 @@ pm list packages | grep io.github.a13e300.ksuwebui
 
 ```sh
 # 开关
-sh /data/adb/modules/float_charge/bin/float-ctl.sh start
-sh /data/adb/modules/float_charge/bin/float-ctl.sh stop
-sh /data/adb/modules/float_charge/bin/float-ctl.sh toggle
-sh /data/adb/modules/float_charge/bin/float-ctl.sh status
+sh /data/adb/modules/MiFloatCharge/bin/float-ctl.sh start
+sh /data/adb/modules/MiFloatCharge/bin/float-ctl.sh stop
+sh /data/adb/modules/MiFloatCharge/bin/float-ctl.sh toggle
+sh /data/adb/modules/MiFloatCharge/bin/float-ctl.sh status
 
 # 看日志
-tail -50 /data/adb/float_charge/float.log
+tail -50 /data/adb/MiFloatCharge/float.log
 ```
 
 ### 预设（一键切换参数）
@@ -262,7 +265,7 @@ tail -50 /data/adb/float_charge/float.log
 序号=名称,窗口(s),次数,死区(mA),步长(mA),偏离阈值(mA),单次限幅(mA),CM下限(mA),CM上限(mA),电量上限(%),电量下限(%),初始限流(mA)
 ```
 
-出厂自带的三组是实测调出来的：
+出厂预设（实测调出来的三组 + 自定义模板）：
 
 | 预设 | 窗口×次数 | 死区 | CM下限 | CM上限 | 电量上/下 | 初始 | 适用 |
 |---|---|---|---|---|---|---|---|
@@ -273,7 +276,7 @@ tail -50 /data/adb/float_charge/float.log
 
 ### 改参数
 
-编辑 `/data/adb/modules/float_charge/config.conf`，改完不用重启，下个采样周期自动生效。
+编辑 `/data/adb/modules/MiFloatCharge/config.conf`，改完不用重启，下个采样周期自动生效。
 
 最常用的两个：
 
@@ -299,7 +302,8 @@ SAMPLE_COUNT=5     # 每个周期采样次数
 **为什么不用"断充测功耗再赋值"**：那样每轮都要让电池放电十几秒，
 电池反复充放反而增加负担。增量反馈全程不断充，代价是收敛慢（几个周期到稳态）。
 
-启动时从 `MIN_CM_MA`（50mA）起步，所以不会一上来就大量充电。
+启动时从 `INIT_CM_MA`（默认 100mA）起步，再受 `MIN_CM_MA` / `MAX_CM_MA` 钳位，
+所以不会一上来就大量充电。
 
 ## 和 MiBypassCharge 的区别
 
@@ -317,7 +321,7 @@ K70 有官方旁路位所以能用真旁路；平板没有（`persist.vendor.sma
 ## 使用须知
 
 - 悬浮状态下电量基本不动，这是设计目的，不是 bug；想正常充电就关掉模块
-- 拔电后模块自动暂停，重新插上会从 `MIN_CM_MA` 重新开始收敛（不会记得上次的值）
+- 拔电后模块自动暂停，重新插上会从 `INIT_CM_MA` 重新开始收敛（不会记得上次的值）
 - 关闭模块 / 卸载模块都会还原电流上限，不会留下"一直限流"的状态
 - 想换参数直接改 `config.conf`，下一个周期生效，不用重启
 

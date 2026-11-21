@@ -59,6 +59,6 @@
 ## 建议
 
 - 只在插着充电器、有人看着的时候首次试用
-- 出问题时：`sh /data/adb/modules/float_charge/bin/float-ctl.sh stop`
+- 出问题时：`sh /data/adb/modules/MiFloatCharge/bin/float-ctl.sh stop`
   即可停止并还原电流上限；实在不行就重启设备
 - 生产/主力设备请谨慎评估后再决定是否使用
