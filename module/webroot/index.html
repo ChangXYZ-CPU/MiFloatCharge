@@ -138,7 +138,7 @@ input,.logbox,.logbox *{-webkit-user-select:text;user-select:text;-webkit-touch-
       <div class="hint2" id="toggleMeta"></div>
       <div class="tinrow">
         <span>初始限流</span>
-        <input type="number" id="p-init" min="50" max="5000" step="10">
+        <input type="number" id="p-init" min="0" max="5000" step="10">
         <span class="unit">mA</span>
       </div>
       <div class="tinrow">
@@ -203,7 +203,7 @@ input,.logbox,.logbox *{-webkit-user-select:text;user-select:text;-webkit-touch-
       <div class="prow">
         <div class="plabel"><b>电流下限</b><span>低于 50 会关闭充电，电池开始掉电</span></div>
         <div class="pctrl">
-          <input type="number" id="p-min" min="20" max="2000" step="10">
+          <input type="number" id="p-min" min="0" max="2000" step="10">
           <span class="unit">mA</span>
         </div>
       </div>
