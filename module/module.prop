@@ -1,6 +1,9 @@
-id=float_charge
-name=悬浮供电 (平板)
-version=v1.0.4
-versionCode=4
+id=MiFloatCharge
+name=MiFloatCharge
+version=v1.1.0
+versionCode=110
 author=ChangXYZ
 description=把充电电流钳到≈系统功耗，让电池不充不放（伪旁路）。增量反馈，低频采样，可开关。
+具体适配与实测数据见仓库说明：
+https://github.com/ChangXYZ-CPU/MiFloatCharge
+开发基于 小米平板5 Pro 12.4（M2105K81AC / HyperOS 2）
