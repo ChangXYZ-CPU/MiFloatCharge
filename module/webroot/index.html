@@ -218,7 +218,7 @@ input,.logbox,.logbox *{-webkit-user-select:text;user-select:text;-webkit-touch-
       <div class="prow">
         <div class="plabel"><b>电量下限</b><span>低于此值暂停，优先充满</span></div>
         <div class="pctrl">
-          <input type="number" id="p-battmax" min="50" max="100" step="1">
+          <input type="number" id="p-battmin" min="5" max="60" step="1">
           <span class="unit">%</span>
         </div>
       </div>
@@ -226,7 +226,7 @@ input,.logbox,.logbox *{-webkit-user-select:text;user-select:text;-webkit-touch-
       <div class="prow">
         <div class="plabel"><b>电量上限</b><span>到顶后断电，掉回范围再恢复</span></div>
         <div class="pctrl">
-          <input type="number" id="p-battmin" min="5" max="60" step="1">
+          <input type="number" id="p-battmax" min="50" max="100" step="1">
           <span class="unit">%</span>
         </div>
       </div>
