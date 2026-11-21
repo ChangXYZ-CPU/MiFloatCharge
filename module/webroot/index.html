@@ -22,8 +22,8 @@ h1{font-size:18px;font-weight:600;margin:0 0 2px;letter-spacing:.2px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:13px;
   padding:13px 14px;margin-bottom:11px}
 
-.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:11px}
-.stat{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:11px 13px}
+.grid4{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px;margin-bottom:11px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px 11px}
 .stat .k{font-size:11.5px;color:var(--txt3);margin-bottom:3px}
 .stat .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.25}
 .stat .v small{font-size:11.5px;font-weight:400;color:var(--txt2);margin-left:2px}
@@ -53,18 +53,37 @@ h1{font-size:18px;font-weight:600;margin:0 0 2px;letter-spacing:.2px}
 .plabel b{display:block;font-size:14.5px;font-weight:500;line-height:1.4}
 .plabel span{font-size:11.8px;color:var(--txt3);line-height:1.35}
 .pctrl{display:flex;align-items:center;gap:7px;flex:0 0 auto}
+/* 开关框内的「初始限流」：贴底部，跟上方按钮区用细线分隔 */
+.tinrow{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;
+  padding-top:11px;margin-top:2px;border-top:1px solid rgba(48,56,70,.7);
+  font-size:12.5px;color:var(--txt2)}
+.tinrow input[type=number]{width:70px;padding:7px 8px;font-size:14px}
+.minibtn{background:rgba(58,110,200,.18);color:#7fb0ff;border:1px solid rgba(80,140,255,.32);
+  border-radius:7px;padding:6px 10px;font-size:12px;cursor:pointer}
+.minibtn:active{background:rgba(58,110,200,.4)}
 input[type=number]{width:96px;background:var(--card2);border:1px solid var(--line);
   border-radius:8px;color:var(--txt);padding:9px 11px;font-size:15.5px;
   font-variant-numeric:tabular-nums;outline:none;text-align:center}
 input[type=number]:focus{border-color:var(--blue)}
 .unit{font-size:12.5px;color:var(--txt3);min-width:16px}
-.rangetip{font-size:11px;color:var(--txt3)}
+/* 用 .plabel b 前缀提高权重，否则会被上面的 .plabel span 规则覆盖 */
+.plabel b .rangetip,.rangetip{font-size:11.5px;color:var(--txt3);font-weight:400;
+  display:inline;margin-left:5px;vertical-align:1px}
 
 .savebar{display:flex;gap:9px;align-items:center;margin-top:auto;
   padding-top:11px;border-top:1px solid rgba(42,48,59,.42)}
 .btn{background:var(--blue);color:#fff;border:none;border-radius:9px;padding:10px 20px;
   font-size:14px;font-weight:500;cursor:pointer;transition:opacity .15s}
 .btn:active{opacity:.75}
+.presets{display:flex;gap:6px;margin-left:4px;flex-wrap:wrap}
+.msg{margin-left:auto}
+.tag{background:rgba(58,110,200,.16);color:#7fb0ff;border:1px solid rgba(80,140,255,.3);
+  border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;
+  user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;transition:background .15s}
+.tag:active{background:rgba(58,110,200,.38)}
+/* 界面文字默认不可选中：长按预设标签不会弹出系统文字选择菜单，手感更像原生控件 */
+body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input,.logbox,.logbox *{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--txt2)}
 .msg{font-size:12.5px;color:var(--green)}
 .msg.err{color:var(--red)}
@@ -87,7 +106,7 @@ input[type=number]:focus{border-color:var(--blue)}
 .banner{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.32);color:#fca5a5;
   border-radius:9px;padding:10px 13px;font-size:12.5px;margin-bottom:11px;display:none}
 
-@media(max-width:860px){
+@media(max-width:640px){
   .grid4{grid-template-columns:repeat(2,1fr)}
   .mainrow{flex-direction:column}
   .togglebox{flex:none;flex-direction:row;gap:14px}
@@ -107,6 +126,7 @@ input[type=number]:focus{border-color:var(--blue)}
     <div class="stat"><div class="k">电量</div><div class="v blue" id="s-cap">—<small>%</small></div></div>
     <div class="stat"><div class="k">电池净电流</div><div class="v" id="s-cur">—<small>mA</small></div></div>
     <div class="stat"><div class="k">电流上限 CM</div><div class="v gray" id="s-cm">—<small>mA</small></div></div>
+    <div class="stat"><div class="k">功率</div><div class="v" id="s-pwr">—<small>W</small></div></div>
     <div class="stat"><div class="k">充电器</div><div class="v gray" id="s-usb">—</div></div>
   </div>
 
@@ -115,6 +135,16 @@ input[type=number]:focus{border-color:var(--blue)}
       <button class="bigbtn off" id="btn">开启</button>
       <div class="hint" id="btnHint">当前未运行</div>
       <div class="hint2" id="toggleMeta"></div>
+      <div class="tinrow">
+        <span>初始限流</span>
+        <input type="number" id="p-init" min="50" max="5000" step="10">
+        <span class="unit">mA</span>
+      </div>
+      <div class="tinrow">
+        <span>手动 CM</span>
+        <input type="number" id="man-cm" min="0" max="22000" step="10" placeholder="临时">
+        <button type="button" class="minibtn" id="man-send">发送</button>
+      </div>
     </div>
 
     <div class="params">
@@ -122,11 +152,10 @@ input[type=number]:focus{border-color:var(--blue)}
 
       <div class="pgrid">
       <div class="prow">
-        <div class="plabel"><b>采样窗口</b><span>多久写一次电流</span></div>
+        <div class="plabel"><b>采样窗口 <span class="rangetip" id="tip-window"></span></b><span>多久写一次电流</span></div>
         <div class="pctrl">
           <input type="number" id="p-window" min="10" max="3600" step="5">
           <span class="unit">秒</span>
-          <span class="rangetip" id="tip-window"></span>
         </div>
       </div>
 
@@ -155,7 +184,23 @@ input[type=number]:focus{border-color:var(--blue)}
       </div>
 
       <div class="prow">
-        <div class="plabel"><b>电流下限</b><span>低于约 40 会滑入断充</span></div>
+        <div class="plabel"><b>偏离阈值</b><span>净电流超过它就大步逼近</span></div>
+        <div class="pctrl">
+          <input type="number" id="p-big" min="20" max="2000" step="10">
+          <span class="unit">mA</span>
+        </div>
+      </div>
+
+      <div class="prow">
+        <div class="plabel"><b>单次限幅</b><span>大步时一次最多挪多少，防震荡</span></div>
+        <div class="pctrl">
+          <input type="number" id="p-maxadj" min="100" max="5000" step="50">
+          <span class="unit">mA</span>
+        </div>
+      </div>
+
+      <div class="prow">
+        <div class="plabel"><b>电流下限</b><span>低于 50 会关闭充电，电池开始掉电</span></div>
         <div class="pctrl">
           <input type="number" id="p-min" min="20" max="2000" step="10">
           <span class="unit">mA</span>
@@ -171,7 +216,7 @@ input[type=number]:focus{border-color:var(--blue)}
       </div>
 
       <div class="prow">
-        <div class="plabel"><b>电量上限</b><span>到顶后保持悬浮不推高</span></div>
+        <div class="plabel"><b>电量下限</b><span>低于此值暂停，优先充满</span></div>
         <div class="pctrl">
           <input type="number" id="p-battmax" min="50" max="100" step="1">
           <span class="unit">%</span>
@@ -179,7 +224,7 @@ input[type=number]:focus{border-color:var(--blue)}
       </div>
 
       <div class="prow">
-        <div class="plabel"><b>电量下限</b><span>低于此值暂停，优先充满</span></div>
+        <div class="plabel"><b>电量上限</b><span>到顶后断电，掉回范围再恢复</span></div>
         <div class="pctrl">
           <input type="number" id="p-battmin" min="5" max="60" step="1">
           <span class="unit">%</span>
@@ -189,7 +234,7 @@ input[type=number]:focus{border-color:var(--blue)}
 
       <div class="savebar">
         <button class="btn" id="save">保存设置</button>
-        <button class="btn ghost" id="reload">重新读取</button>
+        <div class="presets" id="presets"></div>
         <span class="msg" id="msg"></span>
       </div>
     </div>
@@ -202,7 +247,7 @@ input[type=number]:focus{border-color:var(--blue)}
 </div>
 
 <script>
-const MOD='/data/adb/modules/float_charge';
+const MOD='/data/adb/modules/MiFloatCharge';
 const CTL=MOD+'/bin/float-ctl.sh';
 const CFG=MOD+'/config.conf';
 let running=false;
@@ -273,8 +318,9 @@ async function refresh(){
     'echo "CAP=$(cat $B/capacity 2>/dev/null)"; '+
     'echo "CUR=$(cat $B/current_now 2>/dev/null)"; '+
     'echo "CM=$(cat $B/constant_charge_current_max 2>/dev/null)"; '+
+    'echo "VOL=$(cat $B/voltage_now 2>/dev/null)"; '+
     'echo "ONLINE=$(cat $U/online 2>/dev/null)"; '+
-    'echo "DAEMON=$(cat /data/adb/float_charge/daemon.pid 2>/dev/null)"; '+
+    'echo "DAEMON=$(cat /data/adb/MiFloatCharge/daemon.pid 2>/dev/null)"; '+
     'echo "ENABLED=$(grep "^ENABLED=" '+CFG+' 2>/dev/null | cut -d= -f2)"'
   );
   const d={};
@@ -286,13 +332,29 @@ async function refresh(){
   const cur=parseInt(d.CUR||0,10);
   const cm=parseInt(d.CM||0,10);
   $('s-cap').innerHTML=(cap||'—')+'<small>%</small>';
-  $('s-cur').innerHTML=(isNaN(cur)?'—':(cur>0?'+':'')+mA(cur))+'<small>mA</small>';
-  $('s-cm').innerHTML=(isNaN(cm)?'—':mA(cm))+'<small>mA</small>';
+  // 节点约定是「负=充电」，界面翻成直觉的「正=充、负=放」
+  const curDisp=-cur;
+  $('s-cur').innerHTML=(isNaN(curDisp)?'—':(curDisp>0?'+':'')+mA(curDisp))+'<small>mA</small>';
+  // CM 达到原厂正常上限（22000mA）时就是"不限制"，直接显示文字更直观
+  if(isNaN(cm)){
+    $('s-cm').innerHTML='—';
+  }else if(cm>=20000000){
+    $('s-cm').innerHTML='不限';
+  }else{
+    $('s-cm').innerHTML=mA(cm)+'<small>mA</small>';
+  }
+  const vol=parseInt(d.VOL||0,10);
+  // 功率也要带方向：与净电流保持一致（充电正 / 放电负）。
+  // cur 是节点原始值（负=充电），所以取反后 vol*cur 为正=充电。
+  const pwr=(isNaN(vol)||isNaN(cur))?NaN:(-vol*cur)/1e12;
+  $('s-pwr').innerHTML=(isNaN(pwr)?'—':((pwr>0?'+':'')+pwr.toFixed(1)))+'<small>W</small>';
+  const pwrEl=$('s-pwr');
+  pwrEl.className='v '+((!isNaN(pwr)&&Math.abs(pwr)<0.3)?'green':(pwr>0?'blue':'amber'));
   $('s-usb').textContent=(d.ONLINE==='1')?'已连接':'未连接';
   $('s-usb').className='v '+((d.ONLINE==='1')?'green':'gray');
 
   const curEl=$('s-cur');
-  curEl.className='v '+(Math.abs(cur)<80000?'green':(cur<0?'blue':'amber'));
+  curEl.className='v '+(Math.abs(cur)<80000?'green':(curDisp>0?'blue':'amber'));
 
   const pid=d.DAEMON;
   let alive=false;
@@ -331,6 +393,9 @@ async function loadCfg(){
   $('p-count').value=m.SAMPLE_COUNT||5;
   $('p-deadband').value=m.DEADBAND_MA||50;
   $('p-step').value=m.STEP_MA||30;
+  $('p-init').value=m.INIT_CM_MA||100;
+  $('p-big').value=m.BIG_MA||100;
+  $('p-maxadj').value=m.MAX_ADJ_MA||800;
   $('p-min').value=m.MIN_CM_MA||50;
   $('p-max').value=m.MAX_CM_MA||500;
   $('p-battmax').value=m.BATT_MAX||95;
@@ -346,11 +411,22 @@ function updateWindowTip(){
 }
 
 async function saveCfg(){
+  // 电量下限必须小于上限，否则 daemon 会同时命中"到顶断电"和"低电量充满"
+  const _bmax=parseInt($('p-battmax').value,10), _bmin=parseInt($('p-battmin').value,10);
+  if(!isNaN(_bmax)&&!isNaN(_bmin)&&_bmin>=_bmax){
+    $('msg').textContent='电量下限必须小于上限';
+    $('msg').className='msg err';
+    setTimeout(()=>{$('msg').textContent='';},3000);
+    return;
+  }
   const kv={
     SAMPLE_WINDOW:$('p-window').value,
     SAMPLE_COUNT:$('p-count').value,
     DEADBAND_MA:$('p-deadband').value,
     STEP_MA:$('p-step').value,
+    INIT_CM_MA:$('p-init').value,
+    BIG_MA:$('p-big').value,
+    MAX_ADJ_MA:$('p-maxadj').value,
     MIN_CM_MA:$('p-min').value,
     MAX_CM_MA:$('p-max').value,
     BATT_MAX:$('p-battmax').value,
@@ -366,6 +442,47 @@ async function saveCfg(){
   $('msg').className='msg'+(ok?'':' err');
   setTimeout(()=>{$('msg').textContent='';},2600);
   loadCfg();
+}
+
+// 预设标签：点击=套用该预设参数（立即生效），长按 0.6s=用当前参数覆盖该预设
+async function loadPresets(){
+  const el=$('presets'); if(!el) return;
+  const r=await run('sh '+MOD+'/bin/float-ctl.sh preset-list 2>/dev/null');
+  el.innerHTML='';
+  (r.stdout||'').trim().split('\n').forEach(line=>{
+    const m=line.match(/^(\d+)=(.+)$/); if(!m) return;
+    const n=m[1], nm=m[2].split(',')[0];
+    const b=document.createElement('button');
+    b.type='button'; b.className='tag'; b.textContent=nm;
+    let timer=null, long=false;
+    b.addEventListener('pointerdown',e=>{
+      e.preventDefault(); long=false;
+      timer=setTimeout(()=>{ long=true; presetAction(n,true); },600);
+    });
+    const cancel=()=>{ if(timer) clearTimeout(timer); };
+    b.addEventListener('pointerup',()=>{ cancel(); if(!long) presetAction(n,false); });
+    b.addEventListener('pointerleave',cancel);
+    b.addEventListener('pointercancel',cancel);
+    el.appendChild(b);
+  });
+}
+
+async function presetAction(n,isSave){
+  // 首次点击可能把焦点落在输入框上、弹出键盘，这里强制收起
+  if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();
+  const cmd=isSave?'preset-save':'preset-apply';
+  const r=await run('sh '+MOD+'/bin/float-ctl.sh '+cmd+' '+n+' 2>&1');
+  const out=(r.stdout||'').trim();
+  if(out.indexOf('ERR')===0){
+    $('msg').textContent=out.slice(4)||'操作失败';
+    $('msg').className='msg err';
+  } else {
+    const nm=out.replace(/^OK\|/,'');
+    if(!isSave) await loadCfg();
+    $('msg').textContent=isSave?('已用当前参数更新「'+nm+'」'):('已应用「'+nm+'」');
+    $('msg').className='msg';
+  }
+  setTimeout(()=>{$('msg').textContent='';},2600);
 }
 
 async function toggle(){
@@ -384,7 +501,7 @@ async function toggle(){
 }
 
 async function loadLog(){
-  const r=await run('tail -n 60 /data/adb/float_charge/float.log 2>/dev/null');
+  const r=await run('tail -n 60 /data/adb/MiFloatCharge/float.log 2>/dev/null');
   const box=$('log');
   const lines=(r.stdout||'').split('\n').filter(x=>x.trim());
   if(!lines.length){ box.textContent='（暂无日志）'; $('logInfo').textContent=''; return; }
@@ -403,7 +520,20 @@ async function loadLog(){
 
 $('btn').onclick=toggle;
 $('save').onclick=saveCfg;
-$('reload').onclick=()=>{loadCfg();refresh();loadLog();};
+$('man-send').onclick=async()=>{
+  const v=parseInt($('man-cm').value,10);
+  if(isNaN(v)||v<0){
+    $('msg').textContent='请输入有效数值'; $('msg').className='msg err';
+    setTimeout(()=>{$('msg').textContent='';},2400); return;
+  }
+  const CM='/sys/class/power_supply/battery/constant_charge_current_max';
+  const r=await run('chmod 666 '+CM+' 2>/dev/null; echo '+(v*1000)+' > '+CM+'; echo done');
+  const ok=(r.stdout||'').indexOf('done')>=0;
+  $('msg').textContent=ok?('已写入 CM='+v+'mA（下轮可能被自动调整覆盖）'):'写入失败';
+  $('msg').className='msg'+(ok?'':' err');
+  setTimeout(()=>{$('msg').textContent='';},3000);
+  refresh();
+};
 $('p-window').oninput=updateWindowTip;
 $('p-count').oninput=updateWindowTip;
 window.addEventListener('resize',()=>{baseLogMargin=null;fitToScreen();pushLogBelowFold();});
@@ -411,6 +541,7 @@ window.addEventListener('resize',()=>{baseLogMargin=null;fitToScreen();pushLogBe
 (async function init(){
   await refresh();
   await loadCfg();
+  await loadPresets();
   await loadLog();
   fitToScreen();
   pushLogBelowFold();

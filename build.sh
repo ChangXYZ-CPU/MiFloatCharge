@@ -25,11 +25,13 @@ README = """MiFloatCharge -- 悬浮供电 (平板)
 把给电池的电流上限压到与系统耗电相当。
 
 Magisk / KernelSU / APatch 均可，纯脚本（含 WebUI），不安装任何 App。
-实测 小米平板5 Pro / HyperOS / Magisk 30.6；其他暴露该节点的机型理论上可用。
+实测 小米平板5 Pro 12.4 (M2105K81AC) / HyperOS 2 / Magisk 30.6。
+关键实测：constant_charge_current_max 的临界点在 50mA——低于 50 驱动会关闭充电
+（电池开始掉电），50~60 是最小充电档（约 30~40mA），≥100 才线性可控。
 
 安装后默认不启用（config.conf 里 ENABLED=0），需手动开启：
   Magisk 点模块「操作」按钮（装了 KsuWebUI 会直接开图形界面）
-  或执行 sh /data/adb/modules/float_charge/bin/float-ctl.sh start
+  或执行 sh /data/adb/modules/MiFloatCharge/bin/float-ctl.sh start
 
 开源地址: https://github.com/ChangXYZ-CPU/MiFloatCharge
 使用说明 / 参数详解 / 免责声明见仓库 README.md 与 docs/参数说明.md。

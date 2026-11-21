@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # uninstall.sh — 卸载前还原电流上限，避免卸载后还被限流
 MODDIR=${0%/*}
-DATA_DIR=/data/adb/float_charge
+DATA_DIR=/data/adb/MiFloatCharge
 ORIG=$DATA_DIR/orig_cm
 CM=/sys/class/power_supply/battery/constant_charge_current_max
 

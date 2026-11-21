@@ -11,7 +11,7 @@ CTL="$MODDIR/bin/float-ctl.sh"
 # ---------- 优先走图形界面 ----------
 if pm list packages 2>/dev/null | grep -q "io.github.a13e300.ksuwebui"; then
   echo "正在用 KsuWebUI 打开图形界面…"
-  am start -n io.github.a13e300.ksuwebui/.WebUIActivity -e id float_charge > /dev/null 2>&1
+  am start -n io.github.a13e300.ksuwebui/.WebUIActivity -e id MiFloatCharge > /dev/null 2>&1
   sleep 1
   echo ""
   echo "───────── 当前状态 ─────────"
@@ -28,7 +28,7 @@ fi
 
 # ---------- 回退：命令行切换 ----------
 is_on() {
-  p=$(cat /data/adb/float_charge/daemon.pid 2>/dev/null)
+  p=$(cat /data/adb/MiFloatCharge/daemon.pid 2>/dev/null)
   if [ -n "$p" ] && [ -d "/proc/$p" ]; then
     return 0
   fi
