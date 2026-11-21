@@ -5,9 +5,9 @@
 # 会在真机上实际开关模块、读写电流节点，**跑完自动还原**（stop + 还原 CM）。
 # 建议插着充电器跑，否则部分项会跳过。
 
-MOD=/data/adb/modules/float_charge
+MOD=/data/adb/modules/MiFloatCharge
 CTL="$MOD/bin/float-ctl.sh"
-DATA=/data/adb/float_charge
+DATA=/data/adb/MiFloatCharge
 CFG="$MOD/config.conf"
 BAT=/sys/class/power_supply/battery
 CM=$BAT/constant_charge_current_max
