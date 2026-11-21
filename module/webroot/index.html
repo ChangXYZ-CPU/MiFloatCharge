@@ -410,14 +410,14 @@ function updateWindowTip(){
   $('tip-window').textContent='×'+c+'='+per+'s';
 }
 
-async function saveCfg(){
+async function saveCfg(silent){
   // 电量下限必须小于上限，否则 daemon 会同时命中"到顶断电"和"低电量充满"
   const _bmax=parseInt($('p-battmax').value,10), _bmin=parseInt($('p-battmin').value,10);
   if(!isNaN(_bmax)&&!isNaN(_bmin)&&_bmin>=_bmax){
     $('msg').textContent='电量下限必须小于上限';
     $('msg').className='msg err';
     setTimeout(()=>{$('msg').textContent='';},3000);
-    return;
+    return false;
   }
   const kv={
     SAMPLE_WINDOW:$('p-window').value,
@@ -438,10 +438,13 @@ async function saveCfg(){
   }
   const r=await run(cmd+'echo done');
   const ok=(r.stdout||'').trim()==='done';
-  $('msg').textContent=ok?'已保存':'保存失败';
-  $('msg').className='msg'+(ok?'':' err');
-  setTimeout(()=>{$('msg').textContent='';},2600);
-  loadCfg();
+  if(!silent){
+    $('msg').textContent=ok?'已保存':'保存失败';
+    $('msg').className='msg'+(ok?'':' err');
+    setTimeout(()=>{$('msg').textContent='';},2600);
+  }
+  if(ok) loadCfg();
+  return ok;
 }
 
 // 预设标签：点击=套用该预设参数（立即生效），长按 0.6s=用当前参数覆盖该预设
@@ -470,6 +473,12 @@ async function loadPresets(){
 async function presetAction(n,isSave){
   // 首次点击可能把焦点落在输入框上、弹出键盘，这里强制收起
   if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();
+  if(isSave){
+    // 先把界面上当前显示的值写进配置，再存预设：
+    // 否则「改了数字但没点保存」直接长按，存进去的还是旧值（反直觉）
+    const saved=await saveCfg(true);
+    if(!saved) return;   // 校验失败已提示，不再写预设
+  }
   const cmd=isSave?'preset-save':'preset-apply';
   const r=await run('sh '+MOD+'/bin/float-ctl.sh '+cmd+' '+n+' 2>&1');
   const out=(r.stdout||'').trim();
