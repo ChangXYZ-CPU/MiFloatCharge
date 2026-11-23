@@ -125,8 +125,11 @@ INITED=0
 LAST_ONLINE=""
 LAST_ENABLED=""
 RESTART=0
+SKIP_HOLD_TICK=0
+TICK=0
 
 while true; do
+  TICK=$((TICK + 1))
   load_conf
 
   # 收到 SIGUSR1（保存/切预设）→ 用新配置从第一轮重新开始
@@ -134,6 +137,10 @@ while true; do
     RESTART=0
     INITED=0
     LAST_ONLINE=""
+    # 保存设置/切预设是用户主动等着的，跳过 60s 初始保持，立刻用新参数采样。
+    # 只对「本轮」有效：若本轮因故（如低电量）continue 没走到初始化块，
+    # 下一轮 TICK 变了标志自动失效——否则残留到后续真·快充切入时会漏掉 60s 保护。
+    SKIP_HOLD_TICK=$TICK
     log "配置已更新，重新开始周期"
   fi
 
@@ -234,6 +241,17 @@ while true; do
     write_cm "$init"
     log "初始化 CM=$(ua2ma "$init")mA（经验起点）"
     INITED=1
+    # 刚从快充切到限流时，写 CM 会触发 PD 重新协商、充电断约一分钟。
+    # 这段时间采样会把"断充"误判成大幅偏离，下一轮就大步调整、CM 突然波动。
+    # 所以保持初始 CM 60 秒不采样，让 PD 稳定后再按设定参数采样。
+    # 例外：保存设置/切预设（SIGUSR1）时用户正等着，跳过等待立即采样。
+    if [ "$SKIP_HOLD_TICK" = "$TICK" ]; then
+      SKIP_HOLD_TICK=0
+    else
+      log "保持初始 CM 60 秒后开始采样"
+      nap 60
+    fi
+    continue
   fi
 
   # 采样
@@ -242,6 +260,9 @@ while true; do
   sum=0
   i=0
   while [ "$i" -lt "$SAMPLE_COUNT" ]; do
+    # 采样中收到 SIGUSR1（保存/切预设）：上一轮 nap 已被 trap 打断，
+    # 这里立刻跳出，别再把剩余采样点睡完才生效（COUNT=3 时最坏多等 20s）
+    [ "$RESTART" = "1" ] && break
     c=$(cat "$CUR" 2>/dev/null)
     case "$c" in -*) ok=1;; ''|*[!0-9-]*) ok=0;; *) ok=1;; esac
     if [ "$ok" = "1" ]; then
