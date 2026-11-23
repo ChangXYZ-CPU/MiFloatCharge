@@ -24,7 +24,7 @@ README = """MiFloatCharge -- 悬浮供电 (平板)
 原理：写 /sys/class/power_supply/battery/constant_charge_current_max，
 把给电池的电流上限压到与系统耗电相当。
 
-Magisk / KernelSU / APatch 均可，纯脚本（含 WebUI），不安装任何 App。
+仅支持 Magisk（实测 30.6）；KernelSU / APatch 未适配，请勿安装。纯脚本（含 WebUI），不安装任何 App。
 实测 小米平板5 Pro (M2105K81AC) / HyperOS 1.0（OS1.0.2.0.TKYCNXM / Android 13）/ Magisk 30.6。
 关键实测：constant_charge_current_max 的临界点在 50mA——低于 50 驱动会关闭充电
 （电池开始掉电），50~60 是最小充电档（约 30~40mA），≥100 才线性可控。
