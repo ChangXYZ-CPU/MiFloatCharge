@@ -1,6 +1,6 @@
 id=MiFloatCharge
 name=MiFloatCharge
-version=v1.1.1
-versionCode=111
+version=v1.1.2
+versionCode=112
 author=ChangXYZ
 description=基于 constant_charge_current_max 限流实现的悬浮供电（伪旁路），把给电池的电流钳到≈系统功耗、让电池不充不放。具体适配与实测数据见仓库说明 https://github.com/ChangXYZ-CPU/MiFloatCharge ｜ 开发基于 小米平板5 Pro（M2105K81AC / elish），系统 HyperOS 1.0.2 / Android 13
