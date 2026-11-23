@@ -36,12 +36,19 @@ log() {
   fi
 }
 
+# µA → mA 字符串（保留一位小数），仅用于日志显示
+ua2ma() {
+  v=$1; s=
+  [ "$v" -lt 0 ] && { s=-; v=$((-v)); }
+  echo "${s}$((v / 1000)).$(((v % 1000) / 100))"
+}
+
 load_conf() {
   # 默认值
   ENABLED=0; SAMPLE_WINDOW=60; SAMPLE_COUNT=5; DEADBAND_MA=50
   STEP_MA=30; MIN_CM_MA=50; MAX_CM_MA=500; BATT_MAX=95; BATT_MIN=20
   BIG_MA=100; MAX_ADJ_MA=800; INIT_CM_MA=100; NORMAL_CM_MA=22000
-  LOG_MAX_LINES=400
+  PLUG_POLL=30; LOG_MAX_LINES=400
   [ -f "$CFG" ] && . "$CFG"
   # 防错
   case "$SAMPLE_COUNT" in ''|*[!0-9]*|0) SAMPLE_COUNT=5;; esac
@@ -56,11 +63,15 @@ load_conf() {
   case "$MAX_ADJ_MA" in ''|*[!0-9]*) MAX_ADJ_MA=800;; esac
   case "$INIT_CM_MA" in ''|*[!0-9]*) INIT_CM_MA=100;; esac
   case "$NORMAL_CM_MA" in ''|*[!0-9]*) NORMAL_CM_MA=22000;; esac
+  case "$PLUG_POLL" in ''|*[!0-9]*|0) PLUG_POLL=30;; esac
   [ "$MAX_CM_MA" -lt "$MIN_CM_MA" ] && MAX_CM_MA=$MIN_CM_MA
   # 电量上下限必须留出差距：下限≥上限会同时命中"到顶断电"和"低电量充满"，
   # 逻辑互相打架（实测用户填反后表现为一到上限就断电、永远不悬浮）
   [ "$BATT_MIN" -ge "$BATT_MAX" ] && BATT_MIN=$((BATT_MAX - 5))
   [ "$BATT_MIN" -lt 5 ] && BATT_MIN=5
+  # 断电恢复阈值 = 上限低 2 格点。到顶断电后要掉到这里才恢复，
+  # 避免"掉 1% 就恢复→又充到顶"的夜间横跳（例：90 → 88 才恢复）
+  BATT_RESUME=$(( BATT_MAX - 2 ))
 }
 
 write_cm() {
@@ -98,12 +109,33 @@ echo $$ > "$PIDF"
 load_conf
 log "=== daemon start pid=$$ window=${SAMPLE_WINDOW}s count=${SAMPLE_COUNT} ==="
 
+# 可打断的等待：WebUI 保存设置 / 切预设后发 SIGUSR1，立刻中断当前 sleep，
+# 让主循环用新配置从第一轮重新开始（不用等本周期结束）。
+# 实现：sleep 放后台 + wait，信号来了 kill 掉 sleep，wait 立刻返回。
+SLEEP_PID=""
+trap 'RESTART=1; if [ -n "$SLEEP_PID" ]; then kill "$SLEEP_PID" 2>/dev/null; fi' USR1
+nap() {
+  sleep "${1:-30}" &
+  SLEEP_PID=$!
+  wait "$SLEEP_PID" 2>/dev/null
+  SLEEP_PID=""
+}
+
 INITED=0
 LAST_ONLINE=""
 LAST_ENABLED=""
+RESTART=0
 
 while true; do
   load_conf
+
+  # 收到 SIGUSR1（保存/切预设）→ 用新配置从第一轮重新开始
+  if [ "$RESTART" = "1" ]; then
+    RESTART=0
+    INITED=0
+    LAST_ONLINE=""
+    log "配置已更新，重新开始周期"
+  fi
 
   # 开关关闭 → 若之前开着，把电流上限还原，退出循环前的清理由 ctl 负责
   if [ "$ENABLED" != "1" ]; then
@@ -112,7 +144,7 @@ while true; do
       INITED=0
     fi
     LAST_ENABLED=0
-    sleep 10
+    nap 10
     continue
   fi
   LAST_ENABLED=1
@@ -132,9 +164,9 @@ while true; do
       LAST_ONLINE=0
       INITED=0
     fi
-    # 10 秒而不是 30：拔电时没有充电任务，多唤醒几次代价很小，
-    # 但插回后能更快被感知（实测 30 秒会让用户以为"插了没反应"）
-    sleep 10
+    # 插电检测周期由 PLUG_POLL 控制（默认 30s，可在界面调）。
+    # 默认从 10 调到 30 是为了省电；想要插电秒发现就调小。
+    nap "$PLUG_POLL"
     continue
   fi
   # 重新插电 → 重置，下轮重新初始化
@@ -153,16 +185,21 @@ while true; do
       chmod 666 "$NIGHT" 2>/dev/null
       echo 1 > "$NIGHT" 2>/dev/null
       echo 1 > "$TOPFLAG" 2>/dev/null
-      log "电量 ${cap}% > ${BATT_MAX}%，已断电（等回落到 ${BATT_MAX}% 及以下）"
+      log "电量 ${cap}% > ${BATT_MAX}%，已断电（等回落到 ${BATT_RESUME}% 才恢复）"
     fi
-    sleep "${SAMPLE_WINDOW}"
+    nap "${SAMPLE_WINDOW}"
     continue
   fi
-  # 曾因到顶断电，现在已回落 → 解除
+  # 曾因到顶断电：必须回落到均值以下才解除。
+  # 直接掉 1% 就恢复会造成"90 断 / 89 充 / 90 断"的夜间横跳。
   if [ "$(cat "$TOPFLAG" 2>/dev/null)" = "1" ]; then
+    if [ "$cap" -gt "$BATT_RESUME" ]; then
+      nap "${SAMPLE_WINDOW}"
+      continue
+    fi
     echo 0 > "$NIGHT" 2>/dev/null
     rm -f "$TOPFLAG" 2>/dev/null
-    log "电量 ${cap}% 已回落，解除断电，重新悬浮"
+    log "电量 ${cap}% <= ${BATT_RESUME}%，解除断电，重新悬浮"
     INITED=0
   fi
   if [ "$cap" -lt "$BATT_MIN" ]; then
@@ -177,8 +214,8 @@ while true; do
     else
       log "电量 ${cap}% < ${BATT_MIN}%，暂停（低电量优先充满）"
     fi
-    # 30 秒：充到下限需要时间，不需要太频繁；但 60 秒会让切预设后响应太钝
-    sleep 30
+    # 30 秒：充到下限需要时间，不需要太频繁；切预设会被 SIGUSR1 立刻打断
+    nap 30
     continue
   fi
 
@@ -195,7 +232,7 @@ while true; do
     [ "$init" -lt "$lo" ] && init=$lo
     [ "$init" -gt "$hi" ] && init=$hi
     write_cm "$init"
-    log "初始化 CM=${init}µA（经验起点）"
+    log "初始化 CM=$(ua2ma "$init")mA（经验起点）"
     INITED=1
   fi
 
@@ -211,8 +248,13 @@ while true; do
       sum=$((sum + c))
     fi
     i=$((i + 1))
-    [ "$i" -lt "$SAMPLE_COUNT" ] && sleep "$interval"
+    [ "$i" -lt "$SAMPLE_COUNT" ] && nap "$interval"
   done
+  # SAMPLE_COUNT=1 时循环内那句 sleep 不成立，整个周期没有等待会疯狂空转刷日志，
+  # 这里补一次（其它次数循环内已 sleep COUNT-1 次，不重复）
+  [ "$SAMPLE_COUNT" = "1" ] && nap "$interval"
+  # 采样被 SIGUSR1 打断（配置刚改）→ 本轮数据作废，回顶部用新配置重来
+  [ "$RESTART" = "1" ] && continue
   avg=$((sum / SAMPLE_COUNT))
 
   cm=$(cat "$CM" 2>/dev/null)
@@ -253,6 +295,10 @@ while true; do
   # 限幅
   [ "$cm" -lt "$lo" ] && cm=$lo
   [ "$cm" -gt "$hi" ] && cm=$hi
+  # 限幅后和原值相同 = 已抵到设定的电流下限/上限，调不动了。
+  # adj 归零：跳过 write_cm，日志也如实显示没动作。
+  # 判据用限幅后的实际值（lo/hi 来自配置），不写死任何具体数值。
+  [ "$cm" = "$cm_before" ] && adj=0
 
   if [ "$adj" != "0" ]; then
     write_cm "$cm"
@@ -261,5 +307,7 @@ while true; do
     -2|2) tag='大步' ;;
     *)    tag='' ;;
   esac
-  log "cap=${cap}% avg=${avg}µA cm=${cm}µA adj=${adj}${tag:+ $tag}"
+  # 日志里把净电流符号翻成和界面一致：正=充电、负=放电。
+  # 内部 avg 仍是节点原始值（负=充），控制逻辑全部不动，只改这里显示。
+  log "cap=${cap}% avg=$(ua2ma $((-avg)))mA cm=$(ua2ma "$cm")mA adj=${adj}${tag:+ $tag}"
 done
