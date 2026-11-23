@@ -89,10 +89,11 @@ input,.logbox,.logbox *{-webkit-user-select:text;user-select:text;-webkit-touch-
 .msg{font-size:12.5px;color:var(--green)}
 .msg.err{color:var(--red)}
 
-/* 日志：不再用内部滚动，跟随页面滚动 */
+/* 日志：框内独立滚动，高度约半个屏幕，不把整页撑长 */
 .logbox{background:#0a0c10;border:1px solid var(--line);border-radius:11px;
   padding:14px 14px 12px;font-family:ui-monospace,Menlo,Consolas,monospace;
-  font-size:12px;color:#8b95a5;white-space:pre-wrap;line-height:1.7;word-break:break-all}
+  font-size:12px;color:#8b95a5;white-space:pre-wrap;line-height:1.7;word-break:break-all;
+  height:50vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .logbox .t{color:#4b5563}
 .logbox .adj{color:var(--amber)}
 .logbox .init{color:var(--blue)}
@@ -126,8 +127,8 @@ input,.logbox,.logbox *{-webkit-user-select:text;user-select:text;-webkit-touch-
   <div class="grid4">
     <div class="stat"><div class="k">电量</div><div class="v blue" id="s-cap">—<small>%</small></div></div>
     <div class="stat"><div class="k">电池净电流</div><div class="v" id="s-cur">—<small>mA</small></div></div>
-    <div class="stat"><div class="k">电流上限 CM</div><div class="v gray" id="s-cm">—<small>mA</small></div></div>
     <div class="stat"><div class="k">功率</div><div class="v" id="s-pwr">—<small>W</small></div></div>
+    <div class="stat"><div class="k">电流上限 CM</div><div class="v gray" id="s-cm">—<small>mA</small></div></div>
     <div class="stat"><div class="k">充电器</div><div class="v gray" id="s-usb">—</div></div>
   </div>
 
@@ -140,6 +141,11 @@ input,.logbox,.logbox *{-webkit-user-select:text;user-select:text;-webkit-touch-
         <span>初始限流</span>
         <input type="number" id="p-init" min="0" max="5000" step="10">
         <span class="unit">mA</span>
+      </div>
+      <div class="tinrow">
+        <span>插电检测</span>
+        <input type="number" id="p-plugpoll" min="5" max="120" step="5">
+        <span class="unit">秒</span>
       </div>
       <div class="tinrow">
         <span>手动 CM</span>
@@ -395,6 +401,9 @@ async function loadCfg(){
   $('p-deadband').value=m.DEADBAND_MA||50;
   $('p-step').value=m.STEP_MA||30;
   $('p-init').value=m.INIT_CM_MA||100;
+  $('p-plugpoll').value=m.PLUG_POLL||30;
+  // 手动 CM 的默认临时值 = 当前预设的初始限流（读的是已落盘配置）
+  $('man-cm').placeholder=(m.INIT_CM_MA||100)+' mA';
   $('p-big').value=m.BIG_MA||100;
   $('p-maxadj').value=m.MAX_ADJ_MA||800;
   $('p-min').value=m.MIN_CM_MA||50;
@@ -423,6 +432,7 @@ async function saveCfg(silent){
   const kv={
     SAMPLE_WINDOW:$('p-window').value,
     SAMPLE_COUNT:$('p-count').value,
+    PLUG_POLL:$('p-plugpoll').value,
     DEADBAND_MA:$('p-deadband').value,
     STEP_MA:$('p-step').value,
     INIT_CM_MA:$('p-init').value,
@@ -444,7 +454,11 @@ async function saveCfg(silent){
     $('msg').className='msg'+(ok?'':' err');
     setTimeout(()=>{$('msg').textContent='';},2600);
   }
-  if(ok) loadCfg();
+  // 保存后立即让 daemon 用新配置重开一轮，不用等本周期结束
+  if(ok){
+    await run('sh '+CTL+' kick 2>/dev/null');
+    await loadCfg();
+  }
   return ok;
 }
 
@@ -494,7 +508,11 @@ async function presetAction(n,isSave){
     $('msg').className='msg err';
   } else {
     const nm=out.replace(/^OK\|/,'');
-    if(!isSave) await loadCfg();
+    if(!isSave){
+      // 应用预设后立即让 daemon 用新参数重开一轮
+      await run('sh '+CTL+' kick 2>/dev/null');
+      await loadCfg();
+    }
     $('msg').textContent=isSave?('已用当前参数更新「'+nm+'」'):('已应用「'+nm+'」');
     $('msg').className='msg';
   }
@@ -517,7 +535,7 @@ async function toggle(){
 }
 
 async function loadLog(){
-  const r=await run('tail -n 60 /data/adb/MiFloatCharge/float.log 2>/dev/null');
+  const r=await run('tail -n 200 /data/adb/MiFloatCharge/float.log 2>/dev/null');
   const box=$('log');
   const lines=(r.stdout||'').split('\n').filter(x=>x.trim());
   if(!lines.length){ box.textContent='（暂无日志）'; $('logInfo').textContent=''; return; }
@@ -531,13 +549,17 @@ async function loadLog(){
     if(sp>0) return '<span class="t">'+l.slice(0,sp)+'</span>'+l.slice(sp);
     return l;
   }).join('\n');
+  // 默认滚到底部显示最新一行；否则从第一行看起，向上滚不动（上面没有内容）
+  box.scrollTop=box.scrollHeight;
   $('logInfo').textContent=lines.length+' 条';
 }
 
 $('btn').onclick=toggle;
 $('save').onclick=saveCfg;
 $('man-send').onclick=async()=>{
-  const v=parseInt($('man-cm').value,10);
+  // 留空 = 用当前预设的初始限流（输入框 placeholder 已显示该值）
+  let v=parseInt($('man-cm').value,10);
+  if(isNaN(v)) v=parseInt($('p-init').value,10);
   if(isNaN(v)||v<0){
     $('msg').textContent='请输入有效数值'; $('msg').className='msg err';
     setTimeout(()=>{$('msg').textContent='';},2400); return;

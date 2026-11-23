@@ -84,14 +84,14 @@ do_stop() {
   echo "⏹ 已关闭悬浮供电"
 }
 
-# 预设格式：序号=名称,窗口,次数,死区,步长,偏离阈值,单次限幅,CM下限,CM上限,电量上限,电量下限[,初始限流]
+# 预设格式：序号=名称,窗口,次数,死区,步长,偏离阈值,单次限幅,CM下限,CM上限,电量上限,电量下限,初始限流[,插电检测周期]
 # 改完保存即生效；点击标签应用，长按标签用当前参数覆盖该预设
 default_presets() {
   cat > "$PRESETS" <<'EOT'
-1=游戏,60,5,30,15,100,100,50,5000,85,80,100
-2=睡眠,120,1,10,5,50,20,0,500,85,80,60
-3=日常,30,3,20,10,200,100,50,2000,85,80,80
-4=自定义,30,2,20,10,100,100,50,2000,85,80,80
+1=游戏,60,5,30,15,100,100,50,5000,85,80,100,30
+2=睡眠,120,1,10,5,50,20,0,500,85,80,60,30
+3=日常,30,3,20,10,200,100,50,2000,85,80,80,30
+4=自定义,30,2,20,10,100,100,50,2000,85,80,80,30
 EOT
 }
 
@@ -125,7 +125,8 @@ do_apply_preset() {
   fi
   set_conf BATT_MAX      "$bmax"
   set_conf BATT_MIN      "$bmin"
-  [ -n "$3" ] && set_conf INIT_CM_MA "$3"   # 第 12 项可选，兼容旧预设
+  [ -n "$3" ] && set_conf INIT_CM_MA "$3"   # 第 12 项：初始限流
+  [ -n "$4" ] && set_conf PLUG_POLL "$4"    # 第 13 项可选：插电检测周期，兼容旧预设
   echo "OK|$nm"
 }
 
@@ -139,7 +140,7 @@ do_save_preset() {
   set -- $line
   IFS=$_o
   nm=$1
-  new="$nm,$(get_conf SAMPLE_WINDOW),$(get_conf SAMPLE_COUNT),$(get_conf DEADBAND_MA),$(get_conf STEP_MA),$(get_conf BIG_MA),$(get_conf MAX_ADJ_MA),$(get_conf MIN_CM_MA),$(get_conf MAX_CM_MA),$(get_conf BATT_MAX),$(get_conf BATT_MIN),$(get_conf INIT_CM_MA)"
+  new="$nm,$(get_conf SAMPLE_WINDOW),$(get_conf SAMPLE_COUNT),$(get_conf DEADBAND_MA),$(get_conf STEP_MA),$(get_conf BIG_MA),$(get_conf MAX_ADJ_MA),$(get_conf MIN_CM_MA),$(get_conf MAX_CM_MA),$(get_conf BATT_MAX),$(get_conf BATT_MIN),$(get_conf INIT_CM_MA),$(get_conf PLUG_POLL)"
   [ -f "$PRESETS" ] || default_presets
   grep -v "^$n=" "$PRESETS" > "$PRESETS.tmp" 2>/dev/null
   echo "$n=$new" >> "$PRESETS.tmp"
@@ -168,6 +169,16 @@ do_status() {
   tail -5 "$LOG" 2>/dev/null
 }
 
+# 通知运行中的 daemon 立刻用新配置重开一轮（保存设置 / 切预设后调用）
+do_kick() {
+  if daemon_alive; then
+    p=$(cat "$PIDF")
+    kill -USR1 "$p" 2>/dev/null && echo "OK|已通知 daemon 重启周期" || echo "ERR|信号发送失败"
+  else
+    echo "OK|daemon 未运行，无需通知"
+  fi
+}
+
 case "$1" in
   start)  do_start ;;
   stop)   do_stop ;;
@@ -175,10 +186,11 @@ case "$1" in
     if daemon_alive; then do_stop; else do_start; fi
     ;;
   status) do_status ;;
+  kick)   do_kick ;;
   preset-apply) do_apply_preset "$2" ;;
   preset-save)  do_save_preset "$2" ;;
   preset-list)  do_list_presets ;;
   *)
-    echo "用法: $0 start|stop|toggle|status|preset-list|preset-apply N|preset-save N"
+    echo "用法: $0 start|stop|toggle|status|kick|preset-list|preset-apply N|preset-save N"
     ;;
 esac
