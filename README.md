@@ -243,6 +243,10 @@ pm list packages | grep io.github.a13e300.ksuwebui
 - 参数可视化调整，改完点保存
 - 底部运行日志（首屏不显示，往上滑查看）
 
+界面实测（小米平板 5 Pro / 横屏）：
+
+![WebUI 界面截图](docs/screenshots/webui.jpg)
+
 **没装也不要紧**：`action.sh` 会自动退化成命令行切换（点一下开 / 再点一下关），
 所有功能都能用，只是没有图形界面。
 
