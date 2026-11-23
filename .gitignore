@@ -1,4 +1,5 @@
 *.zip
+release/
 *.png
 *.jpg
 !docs/screenshots/
