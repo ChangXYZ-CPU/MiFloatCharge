@@ -94,8 +94,17 @@ while true; do
   if [ "$RELOAD" = "1" ]; then
     RELOAD=0
     slog "配置已更新，重新裁决时段"
-    CUR_PRESET=$(apply_by_time)
-    slog "应用预设 $CUR_PRESET"
+    # 只在时段对应的预设真变了才 apply：
+    # 否则启动切一次 + 用户保存时段再触发一次，短时间连续 apply 会让 daemon
+    # 两次跳过 60s 初始保持、立刻采样走大步。时段没变就什么都不做。
+    NOW_PRESET=$(in_night && echo "$NIGHT_PRESET" || echo "$DAY_PRESET")
+    if [ "$NOW_PRESET" != "$CUR_PRESET" ]; then
+      sh "$CTL" preset-apply "$NOW_PRESET" >/dev/null 2>&1
+      CUR_PRESET=$NOW_PRESET
+      slog "应用预设 $CUR_PRESET"
+    else
+      slog "时段未变，跳过重复应用"
+    fi
     continue
   fi
 

@@ -120,10 +120,6 @@ input,.logbox,.logbox *{-webkit-user-select:text;user-select:text;-webkit-touch-
 .logbox .adj{color:var(--amber)}
 .logbox .init{color:var(--blue)}
 .logbox .stop{color:var(--red)}
-/* 日志回溯时的「回到最新」按钮：用户上滑后贴底自动跟随暂停，点它恢复 */
-.logjump{display:none;border:1px solid var(--line);background:rgba(58,110,200,.18);
-  color:var(--blue);border-radius:8px;font-size:11.5px;padding:2px 8px;cursor:pointer}
-.logjump.show{display:inline-block}
 
 .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
 .head h2{font-size:13.5px;font-weight:500;margin:0;color:var(--txt2)}
@@ -293,7 +289,7 @@ input,.logbox,.logbox *{-webkit-user-select:text;user-select:text;-webkit-touch-
   </div>
 
   <div class="card" id="logCard">
-    <div class="head"><h2>运行日志</h2><button type="button" class="logjump" id="logJump">↓ 回到最新</button><span style="font-size:11.5px;color:var(--txt3)" id="logInfo"></span></div>
+    <div class="head"><h2>运行日志</h2><span style="font-size:11.5px;color:var(--txt3)" id="logInfo"></span></div>
     <div class="logbox" id="log">加载中…</div>
   </div>
 </div>
@@ -303,7 +299,6 @@ const MOD='/data/adb/modules/MiFloatCharge';
 const CTL=MOD+'/bin/float-ctl.sh';
 const CFG=MOD+'/config.conf';
 let running=false;
-let baseLogMargin=null;
 
 function hasKsu(){ return typeof ksu!=='undefined' && ksu && typeof ksu.exec==='function'; }
 
@@ -330,6 +325,17 @@ function run(cmd){
 const $=id=>document.getElementById(id);
 const mA=u=>Math.round((parseInt(u||0,10))/1000);
 
+// 统一的消息提示：每次显示都先取消上一条的清除定时器，避免快速连续操作时
+// 旧的定时器把新消息提前清掉，或两条消息串台（长按保存后残余「已应用」）。
+let _msgTimer=null;
+function showMsg(text,isErr,ms){
+  const el=$('msg'); if(!el) return;
+  el.textContent=text||'';
+  el.className='msg'+(isErr?' err':'');
+  if(_msgTimer) clearTimeout(_msgTimer);
+  _msgTimer=setTimeout(()=>{ el.textContent=''; },ms||2600);
+}
+
 function showBanner(t){
   const b=$('banner');
   if(!t){ b.style.display='none'; return; }
@@ -349,18 +355,22 @@ function fitToScreen(){
   }
 }
 
-/* 把日志卡片推到首屏之外，保证打开时看不到日志内容 */
+/* 把「定时区 + 日志」整组推到首屏之外：打开页面只看到状态/开关/参数/预设，
+   往下滑才看到定时和日志。定时区在上、日志在下，两者一起偏移同样的距离。 */
 function pushLogBelowFold(){
-  const card=$('logCard');
-  if(!card) return;
-  if(baseLogMargin===null){
-    baseLogMargin=parseFloat(getComputedStyle(card).marginTop)||0;
-  }
-  card.style.marginTop=baseLogMargin+'px';
+  const group=[$('schedCard'),$('logCard')].filter(Boolean);
+  if(!group.length) return;
   const vh=window.innerHeight||document.documentElement.clientHeight;
-  const top=card.getBoundingClientRect().top;
+  // 第一次记录原始 margin（CSS 里的 ~11px），之后都从基准重算
+  group.forEach(c=>{
+    if(c._baseMargin===undefined) c._baseMargin=parseFloat(getComputedStyle(c).marginTop)||0;
+    c.style.marginTop=c._baseMargin+'px';
+  });
+  const first=group[0];
+  const top=first.getBoundingClientRect().top;
   if(top<vh){
-    card.style.marginTop=(baseLogMargin+(vh-top)+6)+'px';
+    const shift=vh-top+6;   // 推到首屏外 6px
+    group.forEach(c=>{ c.style.marginTop=(c._baseMargin+shift)+'px'; });
   }
 }
 
@@ -493,9 +503,7 @@ async function saveCfg(silent){
   // 电量下限必须小于上限，否则 daemon 会同时命中"到顶断电"和"低电量充满"
   const _bmax=parseInt($('p-battmax').value,10), _bmin=parseInt($('p-battmin').value,10);
   if(!isNaN(_bmax)&&!isNaN(_bmin)&&_bmin>=_bmax){
-    $('msg').textContent='电量下限必须小于上限';
-    $('msg').className='msg err';
-    setTimeout(()=>{$('msg').textContent='';},3000);
+    showMsg('电量下限必须小于上限',true,3000);
     return false;
   }
   const kv={
@@ -519,9 +527,7 @@ async function saveCfg(silent){
   const r=await run(cmd+'echo done');
   const ok=(r.stdout||'').trim()==='done';
   if(!silent){
-    $('msg').textContent=ok?'已保存':'保存失败';
-    $('msg').className='msg'+(ok?'':' err');
-    setTimeout(()=>{$('msg').textContent='';},2600);
+    showMsg(ok?'已保存':'保存失败',!ok,2600);
   }
   // 保存后立即让 daemon 用新配置重开一轮，不用等本周期结束
   if(ok){
@@ -564,6 +570,16 @@ function syncPresetHighlight(cfg){
 }
 
 // 预设标签：点击=套用该预设参数（立即生效），长按 0.6s=用当前参数覆盖该预设
+// 只刷新预设数据到缓存，不重建 DOM。
+// 长按保存后用这个而不是 loadPresets()：重建 DOM 会让正在长按的 pointerup
+// 落到坐标相同的新标签上、被当成短按，于是「已保存并执行」之后又冒出「已应用」。
+async function refreshPresetLines(){
+  const r=await run('sh '+MOD+'/bin/float-ctl.sh preset-list 2>/dev/null');
+  (r.stdout||'').trim().split('\n').forEach(line=>{
+    const m=line.match(/^(\d+)=(.+)$/); if(m) _presetLines[m[1]]=m[2];
+  });
+}
+
 async function loadPresets(){
   const el=$('presets'); if(!el) return;
   const r=await run('sh '+MOD+'/bin/float-ctl.sh preset-list 2>/dev/null');
@@ -609,8 +625,7 @@ async function presetAction(n,isSave){
   const r=await run('sh '+MOD+'/bin/float-ctl.sh '+cmd+' '+n+' 2>&1');
   const out=(r.stdout||'').trim();
   if(out.indexOf('ERR')===0){
-    $('msg').textContent=out.slice(4)||'操作失败';
-    $('msg').className='msg err';
+    showMsg(out.slice(4)||'操作失败',true);
   } else {
     const nm=out.replace(/^OK\|/,'');
     if(!isSave){
@@ -619,14 +634,11 @@ async function presetAction(n,isSave){
       await loadCfg();
     }else{
       // 长按保存 = 用当前参数覆盖该预设并立即执行它：配置与刚存的预设一致 → 高亮它
-      _presetLines[n]=_presetLines[n]||'';
-      await loadPresets();       // 重新读取预设（含刚保存的值）
-      await loadCfg();           // 用当前 config 核对 → 命中刚存的预设
+      await refreshPresetLines();  // 只更新缓存、不重建 DOM（避免 pointerup 误触新标签）
+      await loadCfg();             // 用当前 config 核对 → 命中刚存的预设
     }
-    $('msg').textContent=isSave?('已保存并执行「'+nm+'」'):('已应用「'+nm+'」');
-    $('msg').className='msg';
+    showMsg(isSave?('已保存并执行「'+nm+'」'):('已应用「'+nm+'」'));
   }
-  setTimeout(()=>{$('msg').textContent='';},2600);
 }
 
 async function toggle(){
@@ -651,10 +663,6 @@ function logAtBottom(){
   if(!b) return true;
   return b.scrollHeight-b.scrollTop-b.clientHeight <= 30;
 }
-function setLogFollow(on){
-  const j=$('logJump');
-  if(j) j.classList.toggle('show',!on);
-}
 async function loadLog(){
   const r=await run('tail -n 200 /data/adb/MiFloatCharge/float.log 2>/dev/null');
   const box=$('log');
@@ -675,8 +683,7 @@ async function loadLog(){
   const follow=logAtBottom();          // 更新前先记：用户是在看最新，还是上滑在看历史
   _lastLogHtml=html;
   box.innerHTML=html;
-  if(follow) box.scrollTop=box.scrollHeight;   // 只有本来贴底才跟随新内容
-  else setLogFollow(false);
+  if(follow) box.scrollTop=box.scrollHeight;   // 只有本来贴底才跟随新内容；上滑看历史时保持位置
 }
 
 $('btn').onclick=toggle;
@@ -686,29 +693,16 @@ $('man-send').onclick=async()=>{
   let v=parseInt($('man-cm').value,10);
   if(isNaN(v)) v=parseInt($('p-init').value,10);
   if(isNaN(v)||v<0){
-    $('msg').textContent='请输入有效数值'; $('msg').className='msg err';
-    setTimeout(()=>{$('msg').textContent='';},2400); return;
+    showMsg('请输入有效数值',true,2400); return;
   }
   const CM='/sys/class/power_supply/battery/constant_charge_current_max';
   const r=await run('chmod 666 '+CM+' 2>/dev/null; echo '+(v*1000)+' > '+CM+'; echo done');
   const ok=(r.stdout||'').indexOf('done')>=0;
-  $('msg').textContent=ok?('已写入 CM='+v+'mA（下轮可能被自动调整覆盖）'):'写入失败';
-  $('msg').className='msg'+(ok?'':' err');
-  setTimeout(()=>{$('msg').textContent='';},3000);
+  showMsg(ok?('已写入 CM='+v+'mA（下轮可能被自动调整覆盖）'):'写入失败',!ok,3000);
   refresh();
 };
 $('p-window').oninput=updateWindowTip;
 $('p-count').oninput=updateWindowTip;
-// 用户上滑看历史 → 暂停自动跟随并显示「回到最新」；滑回底部 → 自动恢复跟随
-$('log').addEventListener('scroll',()=>{
-  setLogFollow(logAtBottom());
-});
-$('logJump').onclick=()=>{
-  const b=$('log');
-  b.scrollTop=b.scrollHeight;
-  setLogFollow(true);
-};
-
 // 定时开关：勾选立即启动脚本（并按当前时段切一次），取消则停止脚本
 $('schedOn').addEventListener('change',async function(){
   const on=this.checked;
@@ -735,7 +729,7 @@ $('schedSave').onclick=async()=>{
   $('schedInfo').textContent='已保存 · '+st+'~'+en;
   setTimeout(loadSchedStatus,600);
 };
-window.addEventListener('resize',()=>{baseLogMargin=null;fitToScreen();pushLogBelowFold();});
+window.addEventListener('resize',()=>{fitToScreen();pushLogBelowFold();});
 
 (async function init(){
   await refresh();
