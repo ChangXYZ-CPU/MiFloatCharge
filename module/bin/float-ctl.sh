@@ -57,6 +57,17 @@ do_start() {
     tail -5 "$LOG" 2>/dev/null
     return 1
   fi
+  # 总开关开启时，若定时开关本来就开着，把定时脚本一并拉起。
+  # 不动 SCHEDULE_ENABLED 配置：它代表用户「想开定时」的意图，
+  # 关总开关时只停进程不清配置，开回来就能自动恢复。
+  if [ "$(get_conf SCHEDULE_ENABLED)" = "1" ]; then
+    SP=$(cat "$DATA_DIR/schedule.pid" 2>/dev/null)
+    if [ -z "$SP" ] || [ ! -d "/proc/$SP" ]; then
+      setsid sh "$MODDIR/bin/bg-schedule.sh" > /dev/null 2>&1 &
+      sleep 1
+      echo "   定时切换已恢复"
+    fi
+  fi
 }
 
 do_stop() {
@@ -72,6 +83,16 @@ do_stop() {
     echo "daemon 未在运行"
   fi
   rm -f "$PIDF" 2>/dev/null
+  # 总开关关闭 → 定时脚本也停（两个进程联动）。
+  # 但不清 SCHEDULE_ENABLED：保留用户「想开定时」的意图，开总开关时自动恢复。
+  SP=$(cat "$DATA_DIR/schedule.pid" 2>/dev/null)
+  if [ -n "$SP" ] && [ -d "/proc/$SP" ]; then
+    kill "$SP" 2>/dev/null
+    sleep 1
+    [ -d "/proc/$SP" ] && kill -9 "$SP" 2>/dev/null
+    echo "已停止定时脚本"
+  fi
+  rm -f "$DATA_DIR/schedule.pid" 2>/dev/null
   # 还原原始电流上限（关键：不然关了还在限流）
   if [ -e "$CM" ]; then
     chmod 666 "$CM" 2>/dev/null
@@ -179,6 +200,63 @@ do_kick() {
   fi
 }
 
+# ---- 定时切换预设 ----
+SCHED_PIDF=$DATA_DIR/schedule.pid
+schedule_alive() {
+  [ -f "$SCHED_PIDF" ] || return 1
+  p=$(cat "$SCHED_PIDF" 2>/dev/null)
+  [ -n "$p" ] || return 1
+  [ -d "/proc/$p" ] || return 1
+  cmd=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null)
+  case "$cmd" in *bg-schedule*) return 0;; *) return 1;; esac
+}
+
+do_schedule_start() {
+  if schedule_alive; then
+    echo "OK|定时已在运行 (pid=$(cat $SCHED_PIDF))"
+    return 0
+  fi
+  set_conf SCHEDULE_ENABLED 1
+  # 总开关关着时单独开定时会变成「定时在跑但不限流」的半开状态（切了预设也不生效）。
+  # 这里联动把总开关也开：do_start 会按 SCHEDULE_ENABLED=1 一起拉起定时。
+  if [ "$(get_conf ENABLED)" != "1" ]; then
+    do_start
+    if schedule_alive; then
+      echo "OK|定时已开启（总开关一并打开）"
+      return 0
+    fi
+  fi
+  setsid sh "$MODDIR/bin/bg-schedule.sh" >/dev/null 2>&1 &
+  sleep 1
+  if schedule_alive; then
+    echo "OK|定时已开启 (pid=$(cat $SCHED_PIDF))"
+  else
+    echo "ERR|定时启动失败，看日志 $LOG"
+  fi
+}
+
+do_schedule_stop() {
+  set_conf SCHEDULE_ENABLED 0
+  if schedule_alive; then
+    p=$(cat "$SCHED_PIDF")
+    kill "$p" 2>/dev/null
+    sleep 1
+    [ -d "/proc/$p" ] && kill -9 "$p" 2>/dev/null
+    echo "OK|定时已停止"
+  else
+    echo "OK|定时未在运行"
+  fi
+  rm -f "$SCHED_PIDF" 2>/dev/null
+}
+
+do_schedule_status() {
+  if schedule_alive; then
+    echo "ON|pid=$(cat $SCHED_PIDF)|$(get_conf SCHEDULE_START)~$(get_conf SCHEDULE_END)"
+  else
+    echo "OFF||$(get_conf SCHEDULE_START)~$(get_conf SCHEDULE_END)"
+  fi
+}
+
 case "$1" in
   start)  do_start ;;
   stop)   do_stop ;;
@@ -187,10 +265,13 @@ case "$1" in
     ;;
   status) do_status ;;
   kick)   do_kick ;;
+  schedule-start)  do_schedule_start ;;
+  schedule-stop)   do_schedule_stop ;;
+  schedule-status) do_schedule_status ;;
   preset-apply) do_apply_preset "$2" ;;
   preset-save)  do_save_preset "$2" ;;
   preset-list)  do_list_presets ;;
   *)
-    echo "用法: $0 start|stop|toggle|status|kick|preset-list|preset-apply N|preset-save N"
+    echo "用法: $0 start|stop|toggle|status|kick|schedule-start|schedule-stop|schedule-status|preset-list|preset-apply N|preset-save N"
     ;;
 esac

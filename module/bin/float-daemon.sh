@@ -165,9 +165,9 @@ while true; do
       if [ "$(cat "$TOPFLAG" 2>/dev/null)" = "1" ]; then
         echo 0 > "$NIGHT" 2>/dev/null
         rm -f "$TOPFLAG" 2>/dev/null
-        log "拔电，已清除断电标记"
+        log "[拔电] 已清除到顶断电标记（避免插回后 night=1 不充电）"
       fi
-      log "未插电，暂停"
+      log "[拔电] 未检测到充电器，暂停（每 ${PLUG_POLL}s 复查一次，插上自动恢复）"
       LAST_ONLINE=0
       INITED=0
     fi
@@ -178,7 +178,7 @@ while true; do
   fi
   # 重新插电 → 重置，下轮重新初始化
   if [ "$LAST_ONLINE" = "0" ]; then
-    log "已插电，重新初始化"
+    log "[插电] 检测到充电器接入，重新初始化 CM 并开始悬浮"
     INITED=0
   fi
   LAST_ONLINE=1
@@ -192,7 +192,7 @@ while true; do
       chmod 666 "$NIGHT" 2>/dev/null
       echo 1 > "$NIGHT" 2>/dev/null
       echo 1 > "$TOPFLAG" 2>/dev/null
-      log "电量 ${cap}% > ${BATT_MAX}%，已断电（等回落到 ${BATT_RESUME}% 才恢复）"
+      log "[到顶] 电量 ${cap}% > 上限 ${BATT_MAX}%，已断电；等回落到 ${BATT_RESUME}% 才恢复（迟滞 $((BATT_MAX-BATT_RESUME))%）"
     fi
     nap "${SAMPLE_WINDOW}"
     continue
@@ -206,7 +206,7 @@ while true; do
     fi
     echo 0 > "$NIGHT" 2>/dev/null
     rm -f "$TOPFLAG" 2>/dev/null
-    log "电量 ${cap}% <= ${BATT_RESUME}%，解除断电，重新悬浮"
+    log "[恢复] 电量 ${cap}% <= 恢复线 ${BATT_RESUME}%，解除断电，重新初始化 CM 进入悬浮"
     INITED=0
   fi
   if [ "$cap" -lt "$BATT_MIN" ]; then
@@ -216,10 +216,10 @@ while true; do
     c_now=$(cat "$CM" 2>/dev/null)
     if [ "$c_now" != "$want" ]; then
       restore_cm
-      log "电量 ${cap}% < ${BATT_MIN}%，已放开限流（${NORMAL_CM_MA}mA，优先充满）"
+      log "[低电量] 电量 ${cap}% < 下限 ${BATT_MIN}%，已放开限流至正常充电（${NORMAL_CM_MA}mA，优先充满）；充到 ${BATT_MIN}% 会重新限流"
       INITED=0
     else
-      log "电量 ${cap}% < ${BATT_MIN}%，暂停（低电量优先充满）"
+      log "[低电量] 电量 ${cap}% < 下限 ${BATT_MIN}%，已处于正常充电，暂停采样（30s 后复查；切预设会立即打断）"
     fi
     # 30 秒：充到下限需要时间，不需要太频繁；切预设会被 SIGUSR1 立刻打断
     nap 30
@@ -271,9 +271,6 @@ while true; do
     i=$((i + 1))
     [ "$i" -lt "$SAMPLE_COUNT" ] && nap "$interval"
   done
-  # SAMPLE_COUNT=1 时循环内那句 sleep 不成立，整个周期没有等待会疯狂空转刷日志，
-  # 这里补一次（其它次数循环内已 sleep COUNT-1 次，不重复）
-  [ "$SAMPLE_COUNT" = "1" ] && nap "$interval"
   # 采样被 SIGUSR1 打断（配置刚改）→ 本轮数据作废，回顶部用新配置重来
   [ "$RESTART" = "1" ] && continue
   avg=$((sum / SAMPLE_COUNT))
@@ -331,4 +328,10 @@ while true; do
   # 日志里把净电流符号翻成和界面一致：正=充电、负=放电。
   # 内部 avg 仍是节点原始值（负=充），控制逻辑全部不动，只改这里显示。
   log "cap=${cap}% avg=$(ua2ma $((-avg)))mA cm=$(ua2ma "$cm")mA adj=${adj}${tag:+ $tag}"
+
+  # 补齐周期：采样循环里只在采样点之间睡了 COUNT-1 次，
+  # 这里再睡最后一次，让「写一次电流」的真正间隔 = SAMPLE_WINDOW。
+  # （之前 COUNT=3/WINDOW=30 时实际只睡 2×10=20s，写电流频率比设定快 1/3。）
+  # 注意：SIGUSR1 打断同样会走 nap，下一轮顶部 RESTART 生效。
+  nap "$interval"
 done

@@ -24,3 +24,13 @@ if [ "$EN" = "1" ]; then
 else
   echo "$(date '+%m-%d %H:%M:%S') service.sh: ENABLED=${EN:-0}，不启动（零占用）" >> "$DATA_DIR/float.log"
 fi
+
+# 定时切换预设：总开关和定时开关都开着才拉起（关总开关时两个进程联动停止，
+# 开机也保持一致；SCHEDULE_ENABLED 配置不清，开总开关时会自动恢复）
+SCHED=$(grep '^SCHEDULE_ENABLED=' "$MODDIR/config.conf" 2>/dev/null | head -1 | cut -d= -f2)
+if [ "$EN" = "1" ] && [ "$SCHED" = "1" ]; then
+  # 清掉上次残留的 pid（重启后 pid 可能复用）
+  rm -f "$DATA_DIR/schedule.pid" 2>/dev/null
+  pkill -f "bg-schedule[.]sh" 2>/dev/null
+  setsid sh "$MODDIR/bin/bg-schedule.sh" > /dev/null 2>&1 &
+fi
