@@ -217,6 +217,15 @@ do_schedule_start() {
     return 0
   fi
   set_conf SCHEDULE_ENABLED 1
+  # 总开关关着时单独开定时会变成「定时在跑但不限流」的半开状态（切了预设也不生效）。
+  # 这里联动把总开关也开：do_start 会按 SCHEDULE_ENABLED=1 一起拉起定时。
+  if [ "$(get_conf ENABLED)" != "1" ]; then
+    do_start
+    if schedule_alive; then
+      echo "OK|定时已开启（总开关一并打开）"
+      return 0
+    fi
+  fi
   setsid sh "$MODDIR/bin/bg-schedule.sh" >/dev/null 2>&1 &
   sleep 1
   if schedule_alive; then
