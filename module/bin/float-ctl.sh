@@ -57,6 +57,17 @@ do_start() {
     tail -5 "$LOG" 2>/dev/null
     return 1
   fi
+  # 总开关开启时，若定时开关本来就开着，把定时脚本一并拉起。
+  # 不动 SCHEDULE_ENABLED 配置：它代表用户「想开定时」的意图，
+  # 关总开关时只停进程不清配置，开回来就能自动恢复。
+  if [ "$(get_conf SCHEDULE_ENABLED)" = "1" ]; then
+    SP=$(cat "$DATA_DIR/schedule.pid" 2>/dev/null)
+    if [ -z "$SP" ] || [ ! -d "/proc/$SP" ]; then
+      setsid sh "$MODDIR/bin/bg-schedule.sh" > /dev/null 2>&1 &
+      sleep 1
+      echo "   定时切换已恢复"
+    fi
+  fi
 }
 
 do_stop() {
@@ -72,6 +83,16 @@ do_stop() {
     echo "daemon 未在运行"
   fi
   rm -f "$PIDF" 2>/dev/null
+  # 总开关关闭 → 定时脚本也停（两个进程联动）。
+  # 但不清 SCHEDULE_ENABLED：保留用户「想开定时」的意图，开总开关时自动恢复。
+  SP=$(cat "$DATA_DIR/schedule.pid" 2>/dev/null)
+  if [ -n "$SP" ] && [ -d "/proc/$SP" ]; then
+    kill "$SP" 2>/dev/null
+    sleep 1
+    [ -d "/proc/$SP" ] && kill -9 "$SP" 2>/dev/null
+    echo "已停止定时脚本"
+  fi
+  rm -f "$DATA_DIR/schedule.pid" 2>/dev/null
   # 还原原始电流上限（关键：不然关了还在限流）
   if [ -e "$CM" ]; then
     chmod 666 "$CM" 2>/dev/null

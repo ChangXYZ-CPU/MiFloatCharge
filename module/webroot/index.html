@@ -63,8 +63,11 @@ h1{font-size:18px;font-weight:600;margin:0 0 2px;letter-spacing:.2px}
 .bigbtn.on{background:var(--blue);border-color:var(--blue);box-shadow:0 0 0 8px rgba(59,130,246,.13)}
 .bigbtn.off{background:var(--card2);border-color:var(--line);color:var(--txt2)}
 .hint{font-size:12.5px;color:var(--txt3);text-align:center}
+/* 固定高度：这行文字由 refresh 约 1 秒后异步填入（采样/CM 两行）。
+   若初始为 0 高度，填入时 .togglebox 的 justify-content:center 会把整列重新居中，
+   表现为圆按钮上跳、下方输入框下移。预留高度后布局从第一帧就稳定。 */
 .hint2{font-size:11.5px;color:var(--txt3);text-align:center;line-height:1.7;
-  font-variant-numeric:tabular-nums}
+  font-variant-numeric:tabular-nums;height:40px}
 
 .params{flex:1;background:var(--card);border:1px solid var(--line);border-radius:13px;
   padding:14px 16px 12px;display:flex;flex-direction:column;min-height:0}
@@ -161,7 +164,7 @@ input,.logbox,.logbox *{-webkit-user-select:text;user-select:text;-webkit-touch-
     <div class="togglebox">
       <button class="bigbtn off" id="btn">开启</button>
       <div class="hint" id="btnHint">当前未运行</div>
-      <div class="hint2" id="toggleMeta"></div>
+      <div class="hint2" id="toggleMeta"><br></div>
       <div class="tinrow">
         <span>初始限流</span>
         <input type="number" id="p-init" min="0" max="5000" step="10">
