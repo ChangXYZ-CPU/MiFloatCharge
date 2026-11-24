@@ -21,6 +21,9 @@ h1{font-size:18px;font-weight:600;margin:0 0 2px;letter-spacing:.2px}
 
 .card{background:var(--card);border:1px solid var(--line);border-radius:13px;
   padding:13px 14px;margin-bottom:11px}
+/* 定时区和日志在布局算好前先隐藏：否则 init 的几个 su await 期间，
+   它们按自然流出现在首屏内，等 pushLogBelowFold 算完再被推下去，看起来「卡两下慢慢挤」 */
+#schedCard,#logCard{visibility:hidden}
 
 /* 定时切换预设区：开关 + 两个时间点，紧凑一行 */
 .schedrow{display:flex;align-items:center;gap:10px;margin:2px 0 0}
@@ -372,6 +375,8 @@ function pushLogBelowFold(){
     const shift=vh-top+6;   // 推到首屏外 6px
     group.forEach(c=>{ c.style.marginTop=(c._baseMargin+shift)+'px'; });
   }
+  // 位置定好才显示，避免用户看到「先出现再被挤下去」的抖动
+  group.forEach(c=>{ c.style.visibility='visible'; });
 }
 
 async function refresh(){
@@ -731,14 +736,17 @@ $('schedSave').onclick=async()=>{
 };
 window.addEventListener('resize',()=>{fitToScreen();pushLogBelowFold();});
 
+// 布局在首次渲染前就算好：main 高度和卡片位置只依赖视口尺寸和 DOM 结构，
+// 不依赖 su 数据。若等到 init 的几轮 await 之后再算，用户会看到主区域
+// 先小后大、定时区被挤下去的抖动。数据加载只填内容，不再动布局。
+fitToScreen();
+pushLogBelowFold();
+
 (async function init(){
   await refresh();
   await loadCfg();
   await loadPresets();
   await loadLog();
-  fitToScreen();
-  pushLogBelowFold();
-  setTimeout(()=>{fitToScreen();pushLogBelowFold();},150);
   setInterval(refresh,3000);
   setInterval(loadLog,6000);
 })();
