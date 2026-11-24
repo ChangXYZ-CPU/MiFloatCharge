@@ -271,9 +271,6 @@ while true; do
     i=$((i + 1))
     [ "$i" -lt "$SAMPLE_COUNT" ] && nap "$interval"
   done
-  # SAMPLE_COUNT=1 时循环内那句 sleep 不成立，整个周期没有等待会疯狂空转刷日志，
-  # 这里补一次（其它次数循环内已 sleep COUNT-1 次，不重复）
-  [ "$SAMPLE_COUNT" = "1" ] && nap "$interval"
   # 采样被 SIGUSR1 打断（配置刚改）→ 本轮数据作废，回顶部用新配置重来
   [ "$RESTART" = "1" ] && continue
   avg=$((sum / SAMPLE_COUNT))
@@ -331,4 +328,10 @@ while true; do
   # 日志里把净电流符号翻成和界面一致：正=充电、负=放电。
   # 内部 avg 仍是节点原始值（负=充），控制逻辑全部不动，只改这里显示。
   log "cap=${cap}% avg=$(ua2ma $((-avg)))mA cm=$(ua2ma "$cm")mA adj=${adj}${tag:+ $tag}"
+
+  # 补齐周期：采样循环里只在采样点之间睡了 COUNT-1 次，
+  # 这里再睡最后一次，让「写一次电流」的真正间隔 = SAMPLE_WINDOW。
+  # （之前 COUNT=3/WINDOW=30 时实际只睡 2×10=20s，写电流频率比设定快 1/3。）
+  # 注意：SIGUSR1 打断同样会走 nap，下一轮顶部 RESTART 生效。
+  nap "$interval"
 done

@@ -179,6 +179,54 @@ do_kick() {
   fi
 }
 
+# ---- 定时切换预设 ----
+SCHED_PIDF=$DATA_DIR/schedule.pid
+schedule_alive() {
+  [ -f "$SCHED_PIDF" ] || return 1
+  p=$(cat "$SCHED_PIDF" 2>/dev/null)
+  [ -n "$p" ] || return 1
+  [ -d "/proc/$p" ] || return 1
+  cmd=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null)
+  case "$cmd" in *bg-schedule*) return 0;; *) return 1;; esac
+}
+
+do_schedule_start() {
+  if schedule_alive; then
+    echo "OK|定时已在运行 (pid=$(cat $SCHED_PIDF))"
+    return 0
+  fi
+  set_conf SCHEDULE_ENABLED 1
+  setsid sh "$MODDIR/bin/bg-schedule.sh" >/dev/null 2>&1 &
+  sleep 1
+  if schedule_alive; then
+    echo "OK|定时已开启 (pid=$(cat $SCHED_PIDF))"
+  else
+    echo "ERR|定时启动失败，看日志 $LOG"
+  fi
+}
+
+do_schedule_stop() {
+  set_conf SCHEDULE_ENABLED 0
+  if schedule_alive; then
+    p=$(cat "$SCHED_PIDF")
+    kill "$p" 2>/dev/null
+    sleep 1
+    [ -d "/proc/$p" ] && kill -9 "$p" 2>/dev/null
+    echo "OK|定时已停止"
+  else
+    echo "OK|定时未在运行"
+  fi
+  rm -f "$SCHED_PIDF" 2>/dev/null
+}
+
+do_schedule_status() {
+  if schedule_alive; then
+    echo "ON|pid=$(cat $SCHED_PIDF)|$(get_conf SCHEDULE_START)~$(get_conf SCHEDULE_END)"
+  else
+    echo "OFF||$(get_conf SCHEDULE_START)~$(get_conf SCHEDULE_END)"
+  fi
+}
+
 case "$1" in
   start)  do_start ;;
   stop)   do_stop ;;
@@ -187,10 +235,13 @@ case "$1" in
     ;;
   status) do_status ;;
   kick)   do_kick ;;
+  schedule-start)  do_schedule_start ;;
+  schedule-stop)   do_schedule_stop ;;
+  schedule-status) do_schedule_status ;;
   preset-apply) do_apply_preset "$2" ;;
   preset-save)  do_save_preset "$2" ;;
   preset-list)  do_list_presets ;;
   *)
-    echo "用法: $0 start|stop|toggle|status|kick|preset-list|preset-apply N|preset-save N"
+    echo "用法: $0 start|stop|toggle|status|kick|schedule-start|schedule-stop|schedule-status|preset-list|preset-apply N|preset-save N"
     ;;
 esac
