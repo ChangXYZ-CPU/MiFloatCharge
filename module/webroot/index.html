@@ -730,8 +730,10 @@ $('schedOn').addEventListener('change',async function(){
 $('schedSave').onclick=async()=>{
   const hh=v=>{const n=parseInt(v,10);return isNaN(n)||n<0||n>23?0:n;};
   const mm=v=>{const n=parseInt(v,10);return isNaN(n)||n<0||n>59?0:n;};
-  const st=hh($('schedSH').value)+':'+('0'+mm($('schedSM').value)).slice(-2);
-  const en=hh($('schedEH').value)+':'+('0'+mm($('schedEM').value)).slice(-2);
+  // 时和分都补两位：写成 "00:00" 而非 "0:00"。
+  // 脚本虽然已改成数值比较不受影响，但统一格式便于人读和其它工具解析。
+  const st=('0'+hh($('schedSH').value)).slice(-2)+':'+('0'+mm($('schedSM').value)).slice(-2);
+  const en=('0'+hh($('schedEH').value)).slice(-2)+':'+('0'+mm($('schedEM').value)).slice(-2);
   await run('F='+CFG+'; sed -i "s|^SCHEDULE_START=.*|SCHEDULE_START='+st+'|" $F; sed -i "s|^SCHEDULE_END=.*|SCHEDULE_END='+en+'|" $F');
   await run('P=$(cat /data/adb/MiFloatCharge/schedule.pid 2>/dev/null); [ -n "$P" ] && kill -USR1 "$P" 2>/dev/null; echo done');
   $('schedInfo').textContent='已保存 · '+st+'~'+en;

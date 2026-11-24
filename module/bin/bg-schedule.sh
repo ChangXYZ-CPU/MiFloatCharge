@@ -44,17 +44,50 @@ load_conf() {
 # 去前导零（版号老的 sh 不支持 10# 语法）
 strip0() { _v=${1#0}; echo "${_v:-0}"; }
 
+# HH:MM → 当天分钟数。用数值比较，不用字符串比较：
+# 字符串比较会在「0:00 / 9:45」这种无前导零写法上翻车——"20:39" > "9:45" 竟是 false，
+# 导致白天被误判成夜间、切错预设。数值比较对有无前导零都正确，兼容旧配置。
+hhmm2min() {
+  _hh=$(strip0 "${1%%:*}")
+  _mm=$(strip0 "${1##*:}")
+  echo $(( _hh * 60 + _mm ))
+}
+
 # 当前时间是否落在夜间时段 [START, END]，支持跨午夜（START > END）
 in_night() {
-  _now=$(date '+%H:%M')
-  if [ "$SCHEDULE_START" \< "$SCHEDULE_END" ]; then
+  _now=$(hhmm2min "$(date '+%H:%M')")
+  _st=$(hhmm2min "$SCHEDULE_START")
+  _en=$(hhmm2min "$SCHEDULE_END")
+  if [ "$_st" -lt "$_en" ]; then
     # 不跨天，如 08:00~20:00
-    { [ "$_now" \< "$SCHEDULE_START" ] || [ "$_now" \> "$SCHEDULE_END" ]; } && return 1
+    { [ "$_now" -lt "$_st" ] || [ "$_now" -gt "$_en" ]; } && return 1
   else
     # 跨天，如 23:00~07:00：now < START 且 now > END 才是段外
-    [ "$_now" \< "$SCHEDULE_START" ] && [ "$_now" \> "$SCHEDULE_END" ] && return 1
+    [ "$_now" -lt "$_st" ] && [ "$_now" -gt "$_en" ] && return 1
   fi
   return 0
+}
+
+# 预设序号 → 名称（从 presets.conf 读，日志里能看出切的是哪个预设）
+preset_name() {
+  grep "^$1=" "$DATA_DIR/presets.conf" 2>/dev/null | head -1 | cut -d= -f2 | cut -d, -f1
+}
+
+# 下个边界的时刻 + 倒计时（日志里写清「下次切是什么时候」）
+# 输出形如：20:00 进入夜间（约 1 小时 23 分后）
+next_boundary_desc() {
+  if in_night; then
+    _bt="$SCHEDULE_END"; _bn="退出夜间"
+  else
+    _bt="$SCHEDULE_START"; _bn="进入夜间"
+  fi
+  _sec=$(secs_until "$_bt")
+  _h=$(( _sec / 3600 )); _m=$(( (_sec % 3600) / 60 ))
+  if [ "$_h" -gt 0 ]; then
+    echo "${_bt} ${_bn}（约 ${_h} 小时 ${_m} 分后）"
+  else
+    echo "${_bt} ${_bn}（约 ${_m} 分后）"
+  fi
 }
 
 # 距下一次进入/退出边界还有多少秒（今天过了算明天）
@@ -82,28 +115,31 @@ apply_by_time() {
 
 echo $$ > "$PIDF"
 load_conf
-slog "启动 pid=$$ 时段 ${SCHEDULE_START}~${SCHEDULE_END}"
+slog "=== 定时脚本启动 pid=$$ 时段 ${SCHEDULE_START}~${SCHEDULE_END}（夜间→预设${NIGHT_PRESET}/日常→预设${DAY_PRESET}）==="
 
 # 启动即按当前时段切一次（用户选择：立即切）
+if in_night; then NOW="夜间"; else NOW="日常"; fi
 CUR_PRESET=$(apply_by_time)
-slog "已按当前时段应用预设 $CUR_PRESET"
+slog "启动裁决：当前 $(date '+%H:%M') 属${NOW}时段 → 应用预设 ${CUR_PRESET}（$(preset_name "$CUR_PRESET")）；下次 $(next_boundary_desc)"
 
 while true; do
   load_conf
 
   if [ "$RELOAD" = "1" ]; then
     RELOAD=0
-    slog "配置已更新，重新裁决时段"
+    slog "配置已更新（现为 ${SCHEDULE_START}~${SCHEDULE_END}），重新裁决时段"
     # 只在时段对应的预设真变了才 apply：
     # 否则启动切一次 + 用户保存时段再触发一次，短时间连续 apply 会让 daemon
     # 两次跳过 60s 初始保持、立刻采样走大步。时段没变就什么都不做。
+    if in_night; then NOW="夜间"; else NOW="日常"; fi
     NOW_PRESET=$(in_night && echo "$NIGHT_PRESET" || echo "$DAY_PRESET")
     if [ "$NOW_PRESET" != "$CUR_PRESET" ]; then
+      OLD=$CUR_PRESET
       sh "$CTL" preset-apply "$NOW_PRESET" >/dev/null 2>&1
       CUR_PRESET=$NOW_PRESET
-      slog "应用预设 $CUR_PRESET"
+      slog "重裁决：$(date '+%H:%M') 属${NOW}时段，预设 ${OLD}（$(preset_name "$OLD")）→ ${CUR_PRESET}（$(preset_name "$CUR_PRESET")）；下次 $(next_boundary_desc)"
     else
-      slog "时段未变，跳过重复应用"
+      slog "重裁决：$(date '+%H:%M') 属${NOW}时段，仍为预设 ${CUR_PRESET}（$(preset_name "$CUR_PRESET")），未变跳过；下次 $(next_boundary_desc)"
     fi
     continue
   fi
@@ -127,13 +163,15 @@ while true; do
   nap "$NEXT"
   # 醒来后重新裁决：被 SIGUSR1 打断(RELOAD=1) 或睡满到边界，都按当前时段核对一次。
   # 只有预设真的该变才写，避免每轮重复 apply 刷配置。
+  if in_night; then NOW="夜间"; else NOW="日常"; fi
   NOW_PRESET=$(in_night && echo "$NIGHT_PRESET" || echo "$DAY_PRESET")
   if [ "$NOW_PRESET" != "$CUR_PRESET" ]; then
+    OLD=$CUR_PRESET
     sh "$CTL" preset-apply "$NOW_PRESET" >/dev/null 2>&1
     CUR_PRESET=$NOW_PRESET
-    slog "时段切换，应用预设 $CUR_PRESET"
+    slog "★ 到点切换：$(date '+%H:%M') 进入${NOW}时段，预设 ${OLD}（$(preset_name "$OLD")）→ ${CUR_PRESET}（$(preset_name "$CUR_PRESET")）；下次 $(next_boundary_desc)"
   fi
 done
 
 rm -f "$PIDF" 2>/dev/null
-slog "退出"
+slog "=== 定时脚本退出（收到关闭信号或总开关关闭）==="

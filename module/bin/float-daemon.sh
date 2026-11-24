@@ -165,9 +165,9 @@ while true; do
       if [ "$(cat "$TOPFLAG" 2>/dev/null)" = "1" ]; then
         echo 0 > "$NIGHT" 2>/dev/null
         rm -f "$TOPFLAG" 2>/dev/null
-        log "拔电，已清除断电标记"
+        log "[拔电] 已清除到顶断电标记（避免插回后 night=1 不充电）"
       fi
-      log "未插电，暂停"
+      log "[拔电] 未检测到充电器，暂停（每 ${PLUG_POLL}s 复查一次，插上自动恢复）"
       LAST_ONLINE=0
       INITED=0
     fi
@@ -178,7 +178,7 @@ while true; do
   fi
   # 重新插电 → 重置，下轮重新初始化
   if [ "$LAST_ONLINE" = "0" ]; then
-    log "已插电，重新初始化"
+    log "[插电] 检测到充电器接入，重新初始化 CM 并开始悬浮"
     INITED=0
   fi
   LAST_ONLINE=1
@@ -192,7 +192,7 @@ while true; do
       chmod 666 "$NIGHT" 2>/dev/null
       echo 1 > "$NIGHT" 2>/dev/null
       echo 1 > "$TOPFLAG" 2>/dev/null
-      log "电量 ${cap}% > ${BATT_MAX}%，已断电（等回落到 ${BATT_RESUME}% 才恢复）"
+      log "[到顶] 电量 ${cap}% > 上限 ${BATT_MAX}%，已断电；等回落到 ${BATT_RESUME}% 才恢复（迟滞 $((BATT_MAX-BATT_RESUME))%）"
     fi
     nap "${SAMPLE_WINDOW}"
     continue
@@ -206,7 +206,7 @@ while true; do
     fi
     echo 0 > "$NIGHT" 2>/dev/null
     rm -f "$TOPFLAG" 2>/dev/null
-    log "电量 ${cap}% <= ${BATT_RESUME}%，解除断电，重新悬浮"
+    log "[恢复] 电量 ${cap}% <= 恢复线 ${BATT_RESUME}%，解除断电，重新初始化 CM 进入悬浮"
     INITED=0
   fi
   if [ "$cap" -lt "$BATT_MIN" ]; then
@@ -216,10 +216,10 @@ while true; do
     c_now=$(cat "$CM" 2>/dev/null)
     if [ "$c_now" != "$want" ]; then
       restore_cm
-      log "电量 ${cap}% < ${BATT_MIN}%，已放开限流（${NORMAL_CM_MA}mA，优先充满）"
+      log "[低电量] 电量 ${cap}% < 下限 ${BATT_MIN}%，已放开限流至正常充电（${NORMAL_CM_MA}mA，优先充满）；充到 ${BATT_MIN}% 会重新限流"
       INITED=0
     else
-      log "电量 ${cap}% < ${BATT_MIN}%，暂停（低电量优先充满）"
+      log "[低电量] 电量 ${cap}% < 下限 ${BATT_MIN}%，已处于正常充电，暂停采样（30s 后复查；切预设会立即打断）"
     fi
     # 30 秒：充到下限需要时间，不需要太频繁；切预设会被 SIGUSR1 立刻打断
     nap 30
