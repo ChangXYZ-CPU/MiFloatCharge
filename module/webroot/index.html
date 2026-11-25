@@ -637,8 +637,8 @@ async function presetAction(n,isSave){
   } else {
     const nm=out.replace(/^OK\|/,'');
     if(!isSave){
-      // 应用预设后立即让 daemon 用新参数重开一轮
-      await run('sh '+CTL+' kick 2>/dev/null');
+      // daemon 的即时重启已由 ctl preset-apply 内部完成（统一给定时/手动两条路径），
+      // 这里不再额外 kick，避免短时间内两次 USR1。
       await loadCfg();
     }else{
       // 长按保存 = 用当前参数覆盖该预设并立即执行它：配置与刚存的预设一致 → 高亮它

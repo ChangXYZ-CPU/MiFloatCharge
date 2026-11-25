@@ -148,6 +148,12 @@ do_apply_preset() {
   set_conf BATT_MIN      "$bmin"
   [ -n "$3" ] && set_conf INIT_CM_MA "$3"   # 第 12 项：初始限流
   [ -n "$4" ] && set_conf PLUG_POLL "$4"    # 第 13 项可选：插电检测周期，兼容旧预设
+  # 关键：写完配置必须通知 daemon，让它立刻用新参数重开一轮（写新 INIT_CM、跳过 60s 保持）。
+  # 以前这里只改文件不 kick：UI 手动切靠 index.html 另外调 kick 才正常，
+  # 但定时脚本 apply_by_time 只调本命令 → daemon 要等下个采样周期(睡眠预设 180s)才读到，
+  # 表现成"只变了 UI、数值还是旧的、初始 CM 没写"。在这里统一 kick，两条路径行为一致。
+  _ap=$(cat "$PIDF" 2>/dev/null)
+  case "$_ap" in ''|*[!0-9]*) : ;; *) kill -USR1 "$_ap" 2>/dev/null ;; esac
   echo "OK|$nm"
 }
 
