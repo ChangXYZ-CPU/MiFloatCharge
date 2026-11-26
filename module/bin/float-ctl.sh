@@ -94,12 +94,15 @@ do_stop() {
     echo "已停止定时脚本"
   fi
   rm -f "$DATA_DIR/schedule.pid" 2>/dev/null
-  # 还原原始电流上限（关键：不然关了还在限流）
+  # 还原电流上限（关键：不然关了还在限流）。
+  # 优先用 do_start 记录的 orig_cm（启动前的实际值），读不到再回落原厂 22000mA。
   if [ -e "$CM" ]; then
     chmod 666 "$CM" 2>/dev/null
-    echo 22000000 > "$CM" 2>/dev/null
+    _orig=$(cat "$ORIG" 2>/dev/null)
+    case "$_orig" in ''|*[!0-9]*) _orig=22000000 ;; esac
+    echo "$_orig" > "$CM" 2>/dev/null
     now=$(cat "$CM" 2>/dev/null)
-    echo "已还原电流上限: $now µA（原厂 22000mA）"
+    echo "已还原电流上限: $now µA（来源：$( [ -f "$ORIG" ] && echo 启动前值 || echo 原厂默认 )）"
     echo "$(date '+%m-%d %H:%M:%S') === stopped，CM 还原为 $now ===" >> "$LOG"
     rm -f "$ORIG" 2>/dev/null
   fi
@@ -109,7 +112,6 @@ do_stop() {
 # 预设格式：序号=名称,窗口,次数,死区,步长,偏离阈值,单次限幅,CM下限,CM上限,电量上限,电量下限,初始限流[,插电检测周期]
 # 改完保存即生效；点击标签应用，长按标签用当前参数覆盖该预设
 # 固定预设（名称为"固定"）：只把 CM 钉在 INIT_CM_MA，不采样不调整；电量上下限照常生效。
-FIXFLAG=$DATA_DIR/fixed_mode
 default_presets() {
   cat > "$PRESETS" <<'EOT'
 1=日常,60,3,20,10,200,100,50,2000,85,80,80,30
@@ -163,8 +165,9 @@ do_apply_preset() {
   # 以前这里只改文件不 kick：UI 手动切靠 index.html 另外调 kick 才正常，
   # 但定时脚本 apply_by_time 只调本命令 → daemon 要等下个采样周期(夜间预设 180s)才读到，
   # 表现成"只变了 UI、数值还是旧的、初始 CM 没写"。在这里统一 kick，两条路径行为一致。
-  _ap=$(cat "$PIDF" 2>/dev/null)
-  case "$_ap" in ''|*[!0-9]*) : ;; *) kill -USR1 "$_ap" 2>/dev/null ;; esac
+  # 用 daemon_alive 校验 pid 归属（cmdline 含 float-daemon），避免陈旧 pid 被复用后
+  # 误向无关进程发 USR1（SIGUSR1 默认动作是终止，误发会杀掉别的进程）。
+  if daemon_alive; then kill -USR1 "$(cat "$PIDF")" 2>/dev/null; fi
   echo "OK|$nm"
 }
 
@@ -183,6 +186,14 @@ do_save_preset() {
   grep -v "^$n=" "$PRESETS" > "$PRESETS.tmp" 2>/dev/null
   echo "$n=$new" >> "$PRESETS.tmp"
   sort -t= -k1 -n "$PRESETS.tmp" > "$PRESETS" 2>/dev/null && rm -f "$PRESETS.tmp"
+  # 长按保存的若是固定预设，也要写标记：否则 UI 高亮/置灰按名称命中"固定"，
+  # 但 daemon 的 fixed_mode 没置位 → 仍走采样调整，CM 不会被钉住。
+  if [ "$nm" = "固定" ]; then
+    echo 1 > "$FIXFLAG" 2>/dev/null
+  else
+    rm -f "$FIXFLAG" 2>/dev/null
+  fi
+  if daemon_alive; then kill -USR1 "$(cat "$PIDF")" 2>/dev/null; fi
   echo "OK|已用当前参数更新预设：$nm"
 }
 

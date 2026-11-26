@@ -19,7 +19,6 @@ CM=$BAT/constant_charge_current_max
 CUR=$BAT/current_now
 CAP=$BAT/capacity
 ONLINE=/sys/class/power_supply/usb/online
-ORIG=$DATA_DIR/orig_cm
 NIGHT=/sys/class/power_supply/battery/night_charging
 TOPFLAG=$DATA_DIR/top_cut
 FIXFLAG=$DATA_DIR/fixed_mode
@@ -237,8 +236,15 @@ while true; do
   # 下限必须避开失效区：实测 CM 低于约 40 时驱动会忽略该值、反而全速充。
   if [ "$INITED" != "1" ]; then
     init=$((INIT_CM_MA * 1000))
-    [ "$init" -lt "$lo" ] && init=$lo
-    [ "$init" -gt "$hi" ] && init=$hi
+    # 固定模式：电流上下限字段已在 UI 置灰，不再用用户设的 MIN/MAX_CM 限幅，
+    # 只用硬护栏（50mA 防停充、5000mA 防过冲），否则界面灰了却悄悄改值。
+    if [ -f "$FIXFLAG" ]; then
+      [ "$init" -lt 50000 ] && init=50000
+      [ "$init" -gt 5000000 ] && init=5000000
+    else
+      [ "$init" -lt "$lo" ] && init=$lo
+      [ "$init" -gt "$hi" ] && init=$hi
+    fi
     write_cm "$init"
     log "初始化 CM=$(ua2ma "$init")mA（经验起点）"
     INITED=1
@@ -251,8 +257,8 @@ while true; do
     # 暂态点直接矫正（实测把 INIT_CM=50 一步改成 55）。改为睡满一个完整采样
     # 窗口再采样：初始 CM 立即生效，但矫正要等这个周期过去——符合"过了周期再写"。
     if [ -f "$FIXFLAG" ]; then
-      # 固定预设：CM 已钉到 INIT_CM_MA，不采样、不调整。每轮只核对 CM 是否被别处
-      # 改动（驱动/系统偶尔会重置），变了就写回。电量上下限由上面的分支照常处理。
+      # 固定预设：本轮刚把 CM 钉到 INIT_CM_MA，不采样、不调整，睡一个窗口再看。
+      # 后续轮次（INITED=1）才有 CM 核对写回逻辑。电量上下限由上面的分支照常处理。
       log "[固定] CM 固定为 $(ua2ma "$init")mA，不采样不调整"
       nap "$SAMPLE_WINDOW"
       continue
@@ -272,8 +278,9 @@ while true; do
   # （INITED=1 后的每轮走这里；INITED=0 时上面的初始化块已处理。）
   if [ -f "$FIXFLAG" ]; then
     want=$((INIT_CM_MA * 1000))
-    [ "$want" -lt "$lo" ] && want=$lo
-    [ "$want" -gt "$hi" ] && want=$hi
+    # 同上：固定模式不受用户设的电流上下限约束，只保留硬护栏
+    [ "$want" -lt 50000 ] && want=50000
+    [ "$want" -gt 5000000 ] && want=5000000
     c_now=$(cat "$CM" 2>/dev/null)
     [ "$c_now" != "$want" ] && write_cm "$want"
     nap "$SAMPLE_WINDOW"
