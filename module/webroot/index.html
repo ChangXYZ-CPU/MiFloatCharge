@@ -75,6 +75,9 @@ h1{font-size:18px;font-weight:600;margin:0 0 2px;letter-spacing:.2px}
 .prow{display:flex;align-items:center;gap:12px;padding:6px 0;
   border-bottom:1px solid rgba(48,56,70,.85)}
 .pgrid .prow:nth-last-child(-n+2){border-bottom:none}
+.prow.grayed{opacity:.38;pointer-events:none}
+.fixed-note{display:none;font-size:12px;color:var(--txt2);padding:2px 0 6px}
+.fixed-note.on{display:block}
 .plabel{flex:1 1 auto;min-width:0}
 .plabel b{display:block;font-size:14.5px;font-weight:500;line-height:1.4}
 .plabel span{font-size:11.8px;color:var(--txt3);line-height:1.35}
@@ -184,6 +187,7 @@ input,.logbox,.logbox *{-webkit-user-select:text;user-select:text;-webkit-touch-
 
     <div class="params">
       <div class="head"><h2>参数设置</h2><span style="font-size:11.5px;color:var(--txt3)">改完点保存，下个周期生效</span></div>
+      <div class="fixed-note" id="fixedNote">「固定」模式：电流固定在「初始限流」，采样/调整参数已停用；电量上下限仍生效。</div>
 
       <div class="pgrid">
       <div class="prow">
@@ -279,7 +283,7 @@ input,.logbox,.logbox *{-webkit-user-select:text;user-select:text;-webkit-touch-
     <div class="head"><h2>定时切换预设</h2><span style="font-size:11.5px;color:var(--txt3)" id="schedInfo"></span></div>
     <div class="schedrow">
       <label class="sw"><input type="checkbox" id="schedOn"><span></span></label>
-      <span class="sched-desc">开启后按时间段自动切换：夜间用「睡眠」，其余用「日常」</span>
+      <span class="sched-desc">开启后按时间段自动切换：夜间用「夜间」，其余用「日常」</span>
     </div>
     <div class="schedtimes" id="schedTimes">
       <div class="time-sel">
@@ -457,7 +461,10 @@ async function refresh(){
     (r.stdout||'').split('\n').forEach(function(l){
       const i=l.indexOf('='); if(i>0&&!l.trim().startsWith('#')) m[l.slice(0,i).trim()]=l.slice(i+1).trim();
     });
-    if(Object.keys(m).length) syncPresetHighlight(m);
+    if(Object.keys(m).length){
+      syncPresetHighlight(m);
+      applyFixedGray();   // 定时切预设后高亮变了，置灰也要跟着变（同步、零 fork）
+    }
   });
 }
 
@@ -486,8 +493,28 @@ async function loadCfg(){
   $('schedSH').value=sh[0]||23; $('schedSM').value=sh[1]||0;
   $('schedEH').value=eh[0]||7;  $('schedEM').value=eh[1]||0;
   updateWindowTip();
+  // 读一次固定模式标记到缓存（refresh 里也用，避免每3秒 fork su）
+  const fr=await run('cat /data/adb/MiFloatCharge/fixed_mode 2>/dev/null');
+  _fixedFlag=((fr.stdout||'').trim()==='1');
   syncPresetHighlight(m);   // 配置一变就重新核对高亮（定时切预设/手改参数都会反映）
+  applyFixedGray();          // 固定预设：采样/调整字段变灰
   loadSchedStatus();
+}
+
+// 固定模式（预设4）：CM 钉在初始限流，不采样不调整 → 采样窗口/次数/死区/步长/偏离/限幅、
+// 电流上下限(限幅对固定CM无意义) 变灰。初始限流(=固定CM)、电量上下限、插电检测仍可编辑。
+// 真相源是 ctl 写的 fixed_mode 标记文件（_fixedFlag 由 loadCfg 读一次缓存，避免 refresh 每3秒 fork su）；
+// 同时兼容按名称高亮（标记还没写到的旧状态）。
+var _fixedFlag=false;
+function applyFixedGray(){
+  const ids=['p-window','p-count','p-deadband','p-step','p-big','p-maxadj','p-min','p-max'];
+  let fixed=_fixedFlag || /固定/.test((_presetLines[_activePreset]||'').split(',')[0]);
+  ids.forEach(id=>{
+    const el=$(id); if(!el) return;
+    el.disabled=fixed;
+    const row=el.closest('.prow'); if(row) row.classList.toggle('grayed',fixed);
+  });
+  const note=$('fixedNote'); if(note) note.classList.toggle('on',fixed);
 }
 
 // 查定时脚本是否在跑，并同步开关状态
@@ -637,8 +664,8 @@ async function presetAction(n,isSave){
   } else {
     const nm=out.replace(/^OK\|/,'');
     if(!isSave){
-      // 应用预设后立即让 daemon 用新参数重开一轮
-      await run('sh '+CTL+' kick 2>/dev/null');
+      // daemon 的即时重启已由 ctl preset-apply 内部完成（统一给定时/手动两条路径），
+      // 这里不再额外 kick，避免短时间内两次 USR1。
       await loadCfg();
     }else{
       // 长按保存 = 用当前参数覆盖该预设并立即执行它：配置与刚存的预设一致 → 高亮它
@@ -735,7 +762,8 @@ $('schedSave').onclick=async()=>{
   const st=('0'+hh($('schedSH').value)).slice(-2)+':'+('0'+mm($('schedSM').value)).slice(-2);
   const en=('0'+hh($('schedEH').value)).slice(-2)+':'+('0'+mm($('schedEM').value)).slice(-2);
   await run('F='+CFG+'; sed -i "s|^SCHEDULE_START=.*|SCHEDULE_START='+st+'|" $F; sed -i "s|^SCHEDULE_END=.*|SCHEDULE_END='+en+'|" $F');
-  await run('P=$(cat /data/adb/MiFloatCharge/schedule.pid 2>/dev/null); [ -n "$P" ] && kill -USR1 "$P" 2>/dev/null; echo done');
+  // 用 schedule-status 校验 pid 归属（内部核对 cmdline 含 bg-schedule），避免陈旧 pid 被复用后误发 USR1
+  await run('S=$(sh '+CTL+' schedule-status 2>/dev/null); case "$S" in ON\\|pid=*) P=${S#*pid=}; P=${P%%\\|*}; case "$P" in *[!0-9]*|"") ;; *) kill -USR1 "$P" 2>/dev/null;; esac;; esac; echo done');
   $('schedInfo').textContent='已保存 · '+st+'~'+en;
   setTimeout(loadSchedStatus,600);
 };

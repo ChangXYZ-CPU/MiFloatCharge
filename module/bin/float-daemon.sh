@@ -19,9 +19,9 @@ CM=$BAT/constant_charge_current_max
 CUR=$BAT/current_now
 CAP=$BAT/capacity
 ONLINE=/sys/class/power_supply/usb/online
-ORIG=$DATA_DIR/orig_cm
 NIGHT=/sys/class/power_supply/battery/night_charging
 TOPFLAG=$DATA_DIR/top_cut
+FIXFLAG=$DATA_DIR/fixed_mode
 
 mkdir -p "$DATA_DIR" 2>/dev/null
 
@@ -236,21 +236,54 @@ while true; do
   # 下限必须避开失效区：实测 CM 低于约 40 时驱动会忽略该值、反而全速充。
   if [ "$INITED" != "1" ]; then
     init=$((INIT_CM_MA * 1000))
-    [ "$init" -lt "$lo" ] && init=$lo
-    [ "$init" -gt "$hi" ] && init=$hi
+    # 固定模式：电流上下限字段已在 UI 置灰，不再用用户设的 MIN/MAX_CM 限幅，
+    # 只用硬护栏（50mA 防停充、5000mA 防过冲），否则界面灰了却悄悄改值。
+    if [ -f "$FIXFLAG" ]; then
+      [ "$init" -lt 50000 ] && init=50000
+      [ "$init" -gt 5000000 ] && init=5000000
+    else
+      [ "$init" -lt "$lo" ] && init=$lo
+      [ "$init" -gt "$hi" ] && init=$hi
+    fi
     write_cm "$init"
     log "初始化 CM=$(ua2ma "$init")mA（经验起点）"
     INITED=1
     # 刚从快充切到限流时，写 CM 会触发 PD 重新协商、充电断约一分钟。
     # 这段时间采样会把"断充"误判成大幅偏离，下一轮就大步调整、CM 突然波动。
     # 所以保持初始 CM 60 秒不采样，让 PD 稳定后再按设定参数采样。
-    # 例外：保存设置/切预设（SIGUSR1）时用户正等着，跳过等待立即采样。
+    #
+    # 切预设/保存设置（SIGUSR1）：初始 CM 已经立即写入（参数马上生效），
+    # 但同样不能在暂态期采样。夜间预设 SAMPLE_COUNT=1，"立即采样"就是抓单个
+    # 暂态点直接矫正（实测把 INIT_CM=50 一步改成 55）。改为睡满一个完整采样
+    # 窗口再采样：初始 CM 立即生效，但矫正要等这个周期过去——符合"过了周期再写"。
+    if [ -f "$FIXFLAG" ]; then
+      # 固定预设：本轮刚把 CM 钉到 INIT_CM_MA，不采样、不调整，睡一个窗口再看。
+      # 后续轮次（INITED=1）才有 CM 核对写回逻辑。电量上下限由上面的分支照常处理。
+      log "[固定] CM 固定为 $(ua2ma "$init")mA，不采样不调整"
+      nap "$SAMPLE_WINDOW"
+      continue
+    fi
     if [ "$SKIP_HOLD_TICK" = "$TICK" ]; then
       SKIP_HOLD_TICK=0
+      log "切预设：初始 CM 已生效，保持一个采样周期(${SAMPLE_WINDOW}s)后再采样矫正"
+      nap "$SAMPLE_WINDOW"
     else
       log "保持初始 CM 60 秒后开始采样"
       nap 60
     fi
+    continue
+  fi
+
+  # 固定模式下不再采样/调整：只保持 CM = INIT_CM_MA，睡一个窗口回来。
+  # （INITED=1 后的每轮走这里；INITED=0 时上面的初始化块已处理。）
+  if [ -f "$FIXFLAG" ]; then
+    want=$((INIT_CM_MA * 1000))
+    # 同上：固定模式不受用户设的电流上下限约束，只保留硬护栏
+    [ "$want" -lt 50000 ] && want=50000
+    [ "$want" -gt 5000000 ] && want=5000000
+    c_now=$(cat "$CM" 2>/dev/null)
+    [ "$c_now" != "$want" ] && write_cm "$want"
+    nap "$SAMPLE_WINDOW"
     continue
   fi
 

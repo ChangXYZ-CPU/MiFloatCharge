@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # bg-schedule.sh — 定时切换预设（夜间/日常）
 #
-# 按 SCHEDULE_START~SCHEDULE_END 时段切到「睡眠」预设(2)，段外切「日常」预设(3)。
+# 按 SCHEDULE_START~SCHEDULE_END 时段切到「夜间」预设(2)，段外切「日常」预设(1)。
 # 省电要点：不在循环里频繁轮询时间，而是算「距下次边界还有多少秒」一次长睡，
 # 封顶 1 小时（跨过长睡期间系统时间异常的风险窗口）；配置改动由 SIGUSR1 立刻唤醒。
 # 参考了 bypass-charger 的 secs_until 思路，但这里切的是整套预设而非单个阈值。
@@ -13,9 +13,10 @@ LOG=$DATA_DIR/float.log
 PIDF=$DATA_DIR/schedule.pid
 CTL="$MODDIR/bin/float-ctl.sh"
 
-# 睡眠 / 日常 的预设序号（对应 presets.conf 里的 2 / 3）
+# 夜间 / 日常 的预设序号（对应 presets.conf 里的 2 / 1）
+# 预设顺序：1日常 2夜间 3游戏 4固定 5自定义
 NIGHT_PRESET=${NIGHT_PRESET:-2}
-DAY_PRESET=${DAY_PRESET:-3}
+DAY_PRESET=${DAY_PRESET:-1}
 
 slog() {
   echo "$(date '+%m-%d %H:%M:%S') [定时] $*" >> "$LOG" 2>/dev/null
@@ -53,17 +54,20 @@ hhmm2min() {
   echo $(( _hh * 60 + _mm ))
 }
 
-# 当前时间是否落在夜间时段 [START, END]，支持跨午夜（START > END）
+# 当前时间是否落在夜间时段 [START, END)，支持跨午夜（START > END）
+# 边界语义：START 整点算进入夜间，END 整点算退出夜间（左闭右开）。
+# 旧代码用 > END 判断，导致到 END 那一分钟仍算夜间、不切换；配合 secs_until
+# 的"睡到整点"就会错过切换窗口（实测 9:45 没切回日常）。
 in_night() {
   _now=$(hhmm2min "$(date '+%H:%M')")
   _st=$(hhmm2min "$SCHEDULE_START")
   _en=$(hhmm2min "$SCHEDULE_END")
   if [ "$_st" -lt "$_en" ]; then
-    # 不跨天，如 08:00~20:00
-    { [ "$_now" -lt "$_st" ] || [ "$_now" -gt "$_en" ]; } && return 1
+    # 不跨天，如 19:11~19:13：now >= START 且 now < END 是夜间
+    { [ "$_now" -lt "$_st" ] || [ "$_now" -ge "$_en" ]; } && return 1
   else
-    # 跨天，如 23:00~07:00：now < START 且 now > END 才是段外
-    [ "$_now" -lt "$_st" ] && [ "$_now" -gt "$_en" ] && return 1
+    # 跨天，如 23:45~09:45：now >= START 或 now < END 是夜间
+    { [ "$_now" -ge "$_st" ] || [ "$_now" -lt "$_en" ]; } || return 1
   fi
   return 0
 }
@@ -94,15 +98,26 @@ next_boundary_desc() {
 secs_until() {
   _h=$(strip0 "${1%%:*}")
   _m=$(strip0 "${1##*:}")
-  _nh=$(strip0 "$(date +%H)")
-  _nm=$(strip0 "$(date +%M)")
-  _ns=$(strip0 "$(date +%S)")
+  # 一次读取时分秒，避免三次 date 跨秒/跨分钟边界拼出不存在的时间点。
+  # 用字符串切割而非 set --，不碰位置参数。
+  _t=$(date '+%H:%M:%S')
+  _r=${_t#*:}
+  _nh=$(strip0 "${_t%%:*}"); _nm=$(strip0 "${_r%%:*}"); _ns=$(strip0 "${_r##*:}")
   _d=$(( _h*3600 + _m*60 - _nh*3600 - _nm*60 - _ns ))
-  [ "$_d" -le 0 ] && _d=$(( _d + 86400 ))
+  # 刚过边界的 0~59 秒容差：nap 睡到边界整点醒来时 _d 常是 -1~-3（sleep 精度/调度），
+  # 旧代码 `-le 0 → +86400` 会把它当成"下次是明天"，再被封顶睡 3600 秒，
+  # 醒来已是边界后 1 小时、错过切换窗口（实测 9:45 到点没切回日常就是这么来的）。
+  # 给 59 秒容差：边界后 1 分钟内仍返回"马上到点"，让醒来后立刻重新裁决。
+  # 注意必须同时限定 <=0，否则所有正常倒计时（正数）都会被错误设成 1 秒（回归 bug）。
+  if [ "$_d" -ge -59 ] && [ "$_d" -le 0 ]; then
+    _d=1
+  elif [ "$_d" -le 0 ]; then
+    _d=$(( _d + 86400 ))
+  fi
   echo "$_d"
 }
 
-# 切换预设脚本：段内→睡眠、段外→日常。返回应用的预设序号
+# 切换预设脚本：段内→夜间(2)、段外→日常(1)。返回应用的预设序号
 apply_by_time() {
   if in_night; then
     sh "$CTL" preset-apply "$NIGHT_PRESET" >/dev/null 2>&1
@@ -127,20 +142,17 @@ while true; do
 
   if [ "$RELOAD" = "1" ]; then
     RELOAD=0
-    slog "配置已更新（现为 ${SCHEDULE_START}~${SCHEDULE_END}），重新裁决时段"
-    # 只在时段对应的预设真变了才 apply：
-    # 否则启动切一次 + 用户保存时段再触发一次，短时间连续 apply 会让 daemon
-    # 两次跳过 60s 初始保持、立刻采样走大步。时段没变就什么都不做。
+    # 措辞：这里打印的是新保存的"时段配置"，不是当前所处时段；用"夜间时段设为"避免误读成"现在是晚上"
+    slog "时段配置已保存（夜间时段 ${SCHEDULE_START}~${SCHEDULE_END}），重新裁决当前时段"
+    # 保存时段 = 用户主动"重新确定状态"，和开关/启动一样无条件按当前时段 apply。
+    # 不能只在"目标 != CUR_PRESET"时才 apply：CUR_PRESET 只是脚本自己记的上次目标，
+    # 不反映用户中途手动切了什么预设。若手动切到游戏后保存时段，目标(日常)==记录(日常)
+    # 会被误判"未变跳过"，结果停在游戏、与时段目标不符，直到下个边界才纠正。
+    # 无条件 apply 的代价是短时间内可能两次 kick daemon（启动+保存），但正确性优先。
     if in_night; then NOW="夜间"; else NOW="日常"; fi
-    NOW_PRESET=$(in_night && echo "$NIGHT_PRESET" || echo "$DAY_PRESET")
-    if [ "$NOW_PRESET" != "$CUR_PRESET" ]; then
-      OLD=$CUR_PRESET
-      sh "$CTL" preset-apply "$NOW_PRESET" >/dev/null 2>&1
-      CUR_PRESET=$NOW_PRESET
-      slog "重裁决：$(date '+%H:%M') 属${NOW}时段，预设 ${OLD}（$(preset_name "$OLD")）→ ${CUR_PRESET}（$(preset_name "$CUR_PRESET")）；下次 $(next_boundary_desc)"
-    else
-      slog "重裁决：$(date '+%H:%M') 属${NOW}时段，仍为预设 ${CUR_PRESET}（$(preset_name "$CUR_PRESET")），未变跳过；下次 $(next_boundary_desc)"
-    fi
+    OLD=$CUR_PRESET
+    CUR_PRESET=$(apply_by_time)
+    slog "重裁决：$(date '+%H:%M') 属${NOW}时段 → 应用预设 ${CUR_PRESET}（$(preset_name "$CUR_PRESET")）[原 ${OLD}（$(preset_name "$OLD")）]；下次 $(next_boundary_desc)"
     continue
   fi
 
