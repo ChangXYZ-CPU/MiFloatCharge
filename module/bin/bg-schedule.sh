@@ -54,17 +54,20 @@ hhmm2min() {
   echo $(( _hh * 60 + _mm ))
 }
 
-# 当前时间是否落在夜间时段 [START, END]，支持跨午夜（START > END）
+# 当前时间是否落在夜间时段 [START, END)，支持跨午夜（START > END）
+# 边界语义：START 整点算进入夜间，END 整点算退出夜间（左闭右开）。
+# 旧代码用 > END 判断，导致到 END 那一分钟仍算夜间、不切换；配合 secs_until
+# 的"睡到整点"就会错过切换窗口（实测 9:45 没切回日常）。
 in_night() {
   _now=$(hhmm2min "$(date '+%H:%M')")
   _st=$(hhmm2min "$SCHEDULE_START")
   _en=$(hhmm2min "$SCHEDULE_END")
   if [ "$_st" -lt "$_en" ]; then
-    # 不跨天，如 08:00~20:00
-    { [ "$_now" -lt "$_st" ] || [ "$_now" -gt "$_en" ]; } && return 1
+    # 不跨天，如 19:11~19:13：now >= START 且 now < END 是夜间
+    { [ "$_now" -lt "$_st" ] || [ "$_now" -ge "$_en" ]; } && return 1
   else
-    # 跨天，如 23:00~07:00：now < START 且 now > END 才是段外
-    [ "$_now" -lt "$_st" ] && [ "$_now" -gt "$_en" ] && return 1
+    # 跨天，如 23:45~09:45：now >= START 或 now < END 是夜间
+    { [ "$_now" -ge "$_st" ] || [ "$_now" -lt "$_en" ]; } || return 1
   fi
   return 0
 }
@@ -99,6 +102,11 @@ secs_until() {
   _nm=$(strip0 "$(date +%M)")
   _ns=$(strip0 "$(date +%S)")
   _d=$(( _h*3600 + _m*60 - _nh*3600 - _nm*60 - _ns ))
+  # 刚过边界的 0~59 秒容差：nap 睡到边界整点醒来时 _d 常是 -1~-3（sleep 精度/调度），
+  # 旧代码 `-le 0 → +86400` 会把它当成"下次是明天"，再被封顶睡 3600 秒，
+  # 醒来已是边界后 1 小时、错过切换窗口（实测 9:45 到点没切回日常就是这么来的）。
+  # 这里给 59 秒容差：边界后 1 分钟内仍返回"马上到点"，让醒来后立刻重新裁决。
+  [ "$_d" -ge -59 ] && _d=1
   [ "$_d" -le 0 ] && _d=$(( _d + 86400 ))
   echo "$_d"
 }
