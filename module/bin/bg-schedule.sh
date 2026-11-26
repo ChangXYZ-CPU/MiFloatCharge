@@ -154,7 +154,10 @@ while true; do
       CUR_PRESET=$NOW_PRESET
       slog "重裁决：$(date '+%H:%M') 属${NOW}时段，预设 ${OLD}（$(preset_name "$OLD")）→ ${CUR_PRESET}（$(preset_name "$CUR_PRESET")）；下次 $(next_boundary_desc)"
     else
-      slog "重裁决：$(date '+%H:%M') 属${NOW}时段，仍为预设 ${CUR_PRESET}（$(preset_name "$CUR_PRESET")），未变跳过；下次 $(next_boundary_desc)"
+      # 措辞注意：CUR_PRESET 是定时脚本自己记的"上次切的目标"，不反映用户手动切了什么。
+      # 用户点保存时段时保留当前手动设置是刻意的（不干扰），日志不能说"仍为预设X"
+      # ——那会误导成"当前就是X"。说清是"目标未变、跳过、保留当前"即可。
+      slog "重裁决：$(date '+%H:%M') 属${NOW}时段，时段目标预设 ${NOW_PRESET}（$(preset_name "$NOW_PRESET")）未变，跳过不切换（保留当前设置）；下次 $(next_boundary_desc)"
     fi
     continue
   fi
