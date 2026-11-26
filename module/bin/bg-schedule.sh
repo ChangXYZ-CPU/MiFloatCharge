@@ -143,22 +143,15 @@ while true; do
   if [ "$RELOAD" = "1" ]; then
     RELOAD=0
     slog "配置已更新（现为 ${SCHEDULE_START}~${SCHEDULE_END}），重新裁决时段"
-    # 只在时段对应的预设真变了才 apply：
-    # 否则启动切一次 + 用户保存时段再触发一次，短时间连续 apply 会让 daemon
-    # 两次跳过 60s 初始保持、立刻采样走大步。时段没变就什么都不做。
+    # 保存时段 = 用户主动"重新确定状态"，和开关/启动一样无条件按当前时段 apply。
+    # 不能只在"目标 != CUR_PRESET"时才 apply：CUR_PRESET 只是脚本自己记的上次目标，
+    # 不反映用户中途手动切了什么预设。若手动切到游戏后保存时段，目标(日常)==记录(日常)
+    # 会被误判"未变跳过"，结果停在游戏、与时段目标不符，直到下个边界才纠正。
+    # 无条件 apply 的代价是短时间内可能两次 kick daemon（启动+保存），但正确性优先。
     if in_night; then NOW="夜间"; else NOW="日常"; fi
-    NOW_PRESET=$(in_night && echo "$NIGHT_PRESET" || echo "$DAY_PRESET")
-    if [ "$NOW_PRESET" != "$CUR_PRESET" ]; then
-      OLD=$CUR_PRESET
-      sh "$CTL" preset-apply "$NOW_PRESET" >/dev/null 2>&1
-      CUR_PRESET=$NOW_PRESET
-      slog "重裁决：$(date '+%H:%M') 属${NOW}时段，预设 ${OLD}（$(preset_name "$OLD")）→ ${CUR_PRESET}（$(preset_name "$CUR_PRESET")）；下次 $(next_boundary_desc)"
-    else
-      # 措辞注意：CUR_PRESET 是定时脚本自己记的"上次切的目标"，不反映用户手动切了什么。
-      # 用户点保存时段时保留当前手动设置是刻意的（不干扰），日志不能说"仍为预设X"
-      # ——那会误导成"当前就是X"。说清是"目标未变、跳过、保留当前"即可。
-      slog "重裁决：$(date '+%H:%M') 属${NOW}时段，时段目标预设 ${NOW_PRESET}（$(preset_name "$NOW_PRESET")）未变，跳过不切换（保留当前设置）；下次 $(next_boundary_desc)"
-    fi
+    OLD=$CUR_PRESET
+    CUR_PRESET=$(apply_by_time)
+    slog "重裁决：$(date '+%H:%M') 属${NOW}时段 → 应用预设 ${CUR_PRESET}（$(preset_name "$CUR_PRESET")）[原 ${OLD}（$(preset_name "$OLD")）]；下次 $(next_boundary_desc)"
     continue
   fi
 
