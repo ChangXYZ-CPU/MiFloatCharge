@@ -9,6 +9,7 @@ LOG=$DATA_DIR/float.log
 PIDF=$DATA_DIR/daemon.pid
 ORIG=$DATA_DIR/orig_cm
 PRESETS=$DATA_DIR/presets.conf
+FIXFLAG=$DATA_DIR/fixed_mode
 CM=/sys/class/power_supply/battery/constant_charge_current_max
 CUR=/sys/class/power_supply/battery/current_now
 CAP=/sys/class/power_supply/battery/capacity
@@ -107,12 +108,15 @@ do_stop() {
 
 # 预设格式：序号=名称,窗口,次数,死区,步长,偏离阈值,单次限幅,CM下限,CM上限,电量上限,电量下限,初始限流[,插电检测周期]
 # 改完保存即生效；点击标签应用，长按标签用当前参数覆盖该预设
+# 固定预设（名称为"固定"）：只把 CM 钉在 INIT_CM_MA，不采样不调整；电量上下限照常生效。
+FIXFLAG=$DATA_DIR/fixed_mode
 default_presets() {
   cat > "$PRESETS" <<'EOT'
-1=游戏,60,5,30,15,100,100,50,5000,85,80,100,30
-2=睡眠,120,1,10,5,50,20,0,500,85,80,60,30
-3=日常,30,3,20,10,200,100,50,2000,85,80,80,30
-4=自定义,30,2,20,10,100,100,50,2000,85,80,80,30
+1=日常,60,3,20,10,200,100,50,2000,85,80,80,30
+2=夜间,180,1,10,5,30,20,50,500,85,80,50,30
+3=游戏,60,5,30,15,100,100,50,5000,85,80,100,30
+4=固定,60,1,20,10,200,100,50,2000,85,80,100,30
+5=自定义,30,2,20,10,100,100,50,2000,85,80,80,30
 EOT
 }
 
@@ -148,9 +152,16 @@ do_apply_preset() {
   set_conf BATT_MIN      "$bmin"
   [ -n "$3" ] && set_conf INIT_CM_MA "$3"   # 第 12 项：初始限流
   [ -n "$4" ] && set_conf PLUG_POLL "$4"    # 第 13 项可选：插电检测周期，兼容旧预设
+  # 固定预设：写标记让 daemon 只把 CM 钉在 INIT_CM_MA、不采样不调整；其余预设清标记。
+  # 用标记文件而非改配置格式：兼容老 presets.conf，daemon 读一个文件即可判断。
+  if [ "$nm" = "固定" ]; then
+    echo 1 > "$FIXFLAG" 2>/dev/null
+  else
+    rm -f "$FIXFLAG" 2>/dev/null
+  fi
   # 关键：写完配置必须通知 daemon，让它立刻用新参数重开一轮（写新 INIT_CM、跳过 60s 保持）。
   # 以前这里只改文件不 kick：UI 手动切靠 index.html 另外调 kick 才正常，
-  # 但定时脚本 apply_by_time 只调本命令 → daemon 要等下个采样周期(睡眠预设 180s)才读到，
+  # 但定时脚本 apply_by_time 只调本命令 → daemon 要等下个采样周期(夜间预设 180s)才读到，
   # 表现成"只变了 UI、数值还是旧的、初始 CM 没写"。在这里统一 kick，两条路径行为一致。
   _ap=$(cat "$PIDF" 2>/dev/null)
   case "$_ap" in ''|*[!0-9]*) : ;; *) kill -USR1 "$_ap" 2>/dev/null ;; esac

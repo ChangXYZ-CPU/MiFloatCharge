@@ -75,6 +75,9 @@ h1{font-size:18px;font-weight:600;margin:0 0 2px;letter-spacing:.2px}
 .prow{display:flex;align-items:center;gap:12px;padding:6px 0;
   border-bottom:1px solid rgba(48,56,70,.85)}
 .pgrid .prow:nth-last-child(-n+2){border-bottom:none}
+.prow.grayed{opacity:.38;pointer-events:none}
+.fixed-note{display:none;font-size:12px;color:var(--txt2);padding:2px 0 6px}
+.fixed-note.on{display:block}
 .plabel{flex:1 1 auto;min-width:0}
 .plabel b{display:block;font-size:14.5px;font-weight:500;line-height:1.4}
 .plabel span{font-size:11.8px;color:var(--txt3);line-height:1.35}
@@ -184,6 +187,7 @@ input,.logbox,.logbox *{-webkit-user-select:text;user-select:text;-webkit-touch-
 
     <div class="params">
       <div class="head"><h2>参数设置</h2><span style="font-size:11.5px;color:var(--txt3)">改完点保存，下个周期生效</span></div>
+      <div class="fixed-note" id="fixedNote">「固定」模式：电流固定在「初始限流」，采样/调整参数已停用；电量上下限仍生效。</div>
 
       <div class="pgrid">
       <div class="prow">
@@ -279,7 +283,7 @@ input,.logbox,.logbox *{-webkit-user-select:text;user-select:text;-webkit-touch-
     <div class="head"><h2>定时切换预设</h2><span style="font-size:11.5px;color:var(--txt3)" id="schedInfo"></span></div>
     <div class="schedrow">
       <label class="sw"><input type="checkbox" id="schedOn"><span></span></label>
-      <span class="sched-desc">开启后按时间段自动切换：夜间用「睡眠」，其余用「日常」</span>
+      <span class="sched-desc">开启后按时间段自动切换：夜间用「夜间」，其余用「日常」</span>
     </div>
     <div class="schedtimes" id="schedTimes">
       <div class="time-sel">
@@ -487,7 +491,25 @@ async function loadCfg(){
   $('schedEH').value=eh[0]||7;  $('schedEM').value=eh[1]||0;
   updateWindowTip();
   syncPresetHighlight(m);   // 配置一变就重新核对高亮（定时切预设/手改参数都会反映）
+  applyFixedGray();          // 固定预设：采样/调整字段变灰
   loadSchedStatus();
+}
+
+// 固定模式（预设4）：CM 钉在初始限流，不采样不调整 → 采样窗口/次数/死区/步长/偏离/限幅 变灰。
+// 电流上下限、初始限流(=固定CM)、电量上下限、插电检测仍可编辑。
+// 真相源是 ctl 写的 fixed_mode 标记文件；同时兼容按名称高亮（标记还没写到的旧状态）。
+async function applyFixedGray(){
+  const ids=['p-window','p-count','p-deadband','p-step','p-big','p-maxadj'];
+  let fixed=false;
+  const r=await run('cat /data/adb/MiFloatCharge/fixed_mode 2>/dev/null');
+  if((r.stdout||'').trim()==='1') fixed=true;
+  if(!fixed && /固定/.test((_presetLines[_activePreset]||'').split(',')[0])) fixed=true;
+  ids.forEach(id=>{
+    const el=$(id); if(!el) return;
+    el.disabled=fixed;
+    const row=el.closest('.prow'); if(row) row.classList.toggle('grayed',fixed);
+  });
+  const note=$('fixedNote'); if(note) note.classList.toggle('on',fixed);
 }
 
 // 查定时脚本是否在跑，并同步开关状态

@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # bg-schedule.sh — 定时切换预设（夜间/日常）
 #
-# 按 SCHEDULE_START~SCHEDULE_END 时段切到「睡眠」预设(2)，段外切「日常」预设(3)。
+# 按 SCHEDULE_START~SCHEDULE_END 时段切到「夜间」预设(2)，段外切「日常」预设(1)。
 # 省电要点：不在循环里频繁轮询时间，而是算「距下次边界还有多少秒」一次长睡，
 # 封顶 1 小时（跨过长睡期间系统时间异常的风险窗口）；配置改动由 SIGUSR1 立刻唤醒。
 # 参考了 bypass-charger 的 secs_until 思路，但这里切的是整套预设而非单个阈值。
@@ -13,9 +13,10 @@ LOG=$DATA_DIR/float.log
 PIDF=$DATA_DIR/schedule.pid
 CTL="$MODDIR/bin/float-ctl.sh"
 
-# 睡眠 / 日常 的预设序号（对应 presets.conf 里的 2 / 3）
+# 夜间 / 日常 的预设序号（对应 presets.conf 里的 2 / 1）
+# 预设顺序：1日常 2夜间 3游戏 4固定 5自定义
 NIGHT_PRESET=${NIGHT_PRESET:-2}
-DAY_PRESET=${DAY_PRESET:-3}
+DAY_PRESET=${DAY_PRESET:-1}
 
 slog() {
   echo "$(date '+%m-%d %H:%M:%S') [定时] $*" >> "$LOG" 2>/dev/null
@@ -102,7 +103,7 @@ secs_until() {
   echo "$_d"
 }
 
-# 切换预设脚本：段内→睡眠、段外→日常。返回应用的预设序号
+# 切换预设脚本：段内→夜间(2)、段外→日常(1)。返回应用的预设序号
 apply_by_time() {
   if in_night; then
     sh "$CTL" preset-apply "$NIGHT_PRESET" >/dev/null 2>&1
