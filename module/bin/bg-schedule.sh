@@ -142,7 +142,8 @@ while true; do
 
   if [ "$RELOAD" = "1" ]; then
     RELOAD=0
-    slog "配置已更新（现为 ${SCHEDULE_START}~${SCHEDULE_END}），重新裁决时段"
+    # 措辞：这里打印的是新保存的"时段配置"，不是当前所处时段；用"夜间时段设为"避免误读成"现在是晚上"
+    slog "时段配置已保存（夜间时段 ${SCHEDULE_START}~${SCHEDULE_END}），重新裁决当前时段"
     # 保存时段 = 用户主动"重新确定状态"，和开关/启动一样无条件按当前时段 apply。
     # 不能只在"目标 != CUR_PRESET"时才 apply：CUR_PRESET 只是脚本自己记的上次目标，
     # 不反映用户中途手动切了什么预设。若手动切到游戏后保存时段，目标(日常)==记录(日常)
